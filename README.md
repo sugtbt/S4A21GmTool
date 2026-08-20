@@ -1,93 +1,70 @@
-# S4A21GmTool
+# DfoGmToolA21
 
+S4A21 服务端的 Web GM 控制台。由 A12 `DfoGmTool` 按当前 A21 服务端数据面迁移而来。
 
+独立进程运行，直接操作 A21 服务端部署目录里的 `inventory.db` 和 `Script.pvf`；浏览器打开 `http://localhost:5051` 使用。
 
-## Getting started
+源码自包含：不依赖任何本地相邻仓库即可构建和发布。
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
+## 与 A12 工具的差异
 
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
+- 默认监听 **5051**，避免和 A12 GM（5050）抢端口
+- 自动发现路径指向 `servers4a21\Server\DfoServer\bin\Debug`
+- 物品核心为 A21 **99 字节 ItemCore**（82B 主体 + 17B A21 尾部）
+- 数据库只走 A21 基线 `86jp-database-v1` / schema 迁移，不会对现有 A21 库跑 A12 的旧迁移链
+- 任务完成标记读写 `character_quest_completions`
+- 称号簿读写 `character_titlebook_items`
+- 成就进度读写 `character_achievements`
+- 背包主表读写 `character_inventory_items` / `account_inventory_items`
+- 公会勋章容器 `list_type=38`（勋章 0-48 / 守护珠 49-97）和穿戴勋章槽 31
+- 灵魂仓库槽 360-364 走 `accounts.soul_*`，与晶块一样在账号面板覆写
+- 打开 A12 或其他非 A21 基线库会立即报错并停止解析
 
-## Add your files
+不要用本工具打开 A12 的 `inventory.db`。
 
-* [Create](https://docs.gitlab.com/user/project/repository/web_editor/#create-a-file) or [upload](https://docs.gitlab.com/user/project/repository/web_editor/#upload-a-file) files
-* [Add files using the command line](https://docs.gitlab.com/topics/git/add_files/#add-files-to-a-git-repository) or push an existing Git repository with the following command:
+## 功能
+
+与 A12 GM 工具相同：账号货币/晶块/灵魂仓库/金库、角色等级/转职/SP-TP、背包查看与删除（含公会勋章容器）、角色邮箱查看/删除/清空、邮件发放物品、任务完成链、称号簿成就。
+
+**发放物品**默认经游戏内邮件：`MailboxRepository.SendSystemMail` 写入 99B ItemCore 附件。在线角色进邮箱即可领取。
+
+直改数据库的操作（删除/货币覆写/直写背包）对在线角色需要返回选角再进入才会生效。
+
+## 构建与运行
 
 ```
-cd existing_repo
-git remote add origin https://gitgud.io/rewio/S4A21GmTool.git
-git branch -M master
-git push -uf origin master
+dotnet build DfoGmTool.csproj -c Debug
+dotnet run --project DfoGmTool.csproj
 ```
 
-## Integrate with your tools
+服务端数据目录按以下顺序定位（找到含 `Data/inventory.db` + `Data/Pvf/Script.pvf` 的目录为止）：
 
-* [Set up project integrations](https://gitgud.io/rewio/S4A21GmTool/-/settings/integrations)
+1. 命令行参数 `--server-bin <路径>`
+2. 环境变量 `DFO_GM_SERVER_BIN`
+3. 从工作目录/程序目录逐级向上，找同级的 `servers4a21\Server\DfoServer\bin\Debug`
 
-## Collaborate with your team
+本机典型路径：
 
-* [Invite team members and collaborators](https://docs.gitlab.com/user/project/members/)
-* [Create a new merge request](https://docs.gitlab.com/user/project/merge_requests/creating_merge_requests/)
-* [Automatically close issues from merge requests](https://docs.gitlab.com/user/project/issues/managing_issues/#closing-issues-automatically)
-* [Enable merge request approvals](https://docs.gitlab.com/user/project/merge_requests/approvals/)
-* [Set auto-merge](https://docs.gitlab.com/user/project/merge_requests/auto_merge/)
+```
+G:\gitwork\servers4a21\Server\DfoServer\bin\Debug
+```
 
-## Test and Deploy
+`item_schema.sql` 优先用服务端目录里的，缺失时回退工具自带的 A21 schema 拷贝。
 
-Use the built-in continuous integration in GitLab.
+## 发布
 
-* [Get started with GitLab CI/CD](https://docs.gitlab.com/ci/quick_start/)
-* [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/user/application_security/sast/)
-* [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/topics/autodevops/requirements/)
-* [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/user/clusters/agent/)
-* [Set up protected environments](https://docs.gitlab.com/ci/environments/protected_environments/)
+```
+dotnet publish DfoGmTool.csproj -c Release -r win-x64 --self-contained true -o bin\publish
+```
 
-***
+目标机器上用 `--server-bin` 或环境变量指向该机的 **A21** 服务端数据目录。
 
-# Editing this README
+## 注意
 
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
-
-## Suggestions for a good README
-
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
-
-## Name
-Choose a self-explaining name for your project.
-
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
-
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
-
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
-
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
-
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
-
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
-
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
-
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
-
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
-
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
-
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
-
-## License
-For open source projects, say how it is licensed.
-
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+- 改动数据库前建议备份 `inventory.db`
+- 强制完成任务不发任务奖励；想拿奖励用「标记可交」然后回城正常交付
+- 打开 A12 或其他非 A21 基线库会立即报错并停止解析，不会读 82B ItemCore
+- 公会勋章容器（`list_type=38`，勋章 0-48 / 守护珠 49-97）和穿戴勋章槽 31 可查看删除
+- 灵魂仓库槽 360-364 与晶块一样在账号面板覆写
+- 角色邮箱可查看收件箱/保管邮件（含已过期），支持单封删除和一键清空；删除只打收件人删除标记，未领取附件不会进背包
+- 物品/任务索引在启动后后台构建，页面顶部显示状态；构建完成前发放不校验物品 ID
