@@ -4,8 +4,7 @@ using Microsoft.Data.Sqlite;
 
 namespace DfoGmTool.ServerCore.Sqlite
 {
-    // 新数据库基线迁移器。
-    // 旧项目 v1-v52 迁移链已经清理，只作为本次基线设计的历史依据。
+    // 与 servers4a21 SqliteMigrations 对齐。GM 仅在 schema 比工具新时跳过未知迁移并继续打开。
     internal static class SqliteMigrations
     {
         internal const string BaselineId = "86jp-database-v1";
@@ -17,6 +16,7 @@ namespace DfoGmTool.ServerCore.Sqlite
             {
                 new MigrationStep(2, "expand_item_core_to_99_and_shift_equipment_slots", ApplyExpandItemCoreTo99),
                 new MigrationStep(3, "import_character_new_items", ApplyImportCharacterNewItems),
+                new MigrationStep(4, "add_item_purchase_limits", ApplyPurchaseLimitTracking),
             };
 
         internal static int CurrentVersion =>
@@ -54,16 +54,16 @@ ON CONFLICT(singleton_id) DO UPDATE SET
             {
                 throw new InvalidOperationException(
                     $"数据库不是 86JP 新基线（需要 baseline_id={BaselineId}）。" +
-                    "请先备份并移走旧数据库，让服务端按当前代码创建新库。" +
-                    "历史 v1-v52 迁移不会在服务启动时执行。");
+                    "请打开 A21 服务端 Data/inventory.db。");
             }
 
             var version = ReadVersion(connection);
             if (version > CurrentVersion || metadata.SchemaVersion > CurrentVersion)
             {
-                throw new InvalidOperationException(
-                    $"数据库 schema v{Math.Max(version, metadata.SchemaVersion)} 高于当前服务支持的 " +
-                    $"v{CurrentVersion}。");
+                FileLogger.Log(
+                    $"[Db] schema v{Math.Max(version, metadata.SchemaVersion)} 高于 GM 内置 v{CurrentVersion}，" +
+                    "跳过未知迁移，按现有表解析。");
+                return;
             }
 
             if (version != metadata.SchemaVersion)
@@ -124,6 +124,35 @@ ON CONFLICT(singleton_id) DO UPDATE SET
             SqliteTransaction transaction)
         {
             ImportCharacterNewItems(connection, transaction, shiftEquipmentSlots: true, dropSourceTable: true);
+        }
+
+        private static void ApplyPurchaseLimitTracking(
+            SqliteConnection connection,
+            SqliteTransaction transaction)
+        {
+            using (var command = connection.CreateCommand())
+            {
+                command.Transaction = transaction;
+                command.CommandText = @"
+CREATE TABLE IF NOT EXISTS item_purchase_limits (
+    account_id INTEGER NOT NULL,
+    character_id INTEGER NOT NULL DEFAULT 0,
+    npc_id INTEGER NOT NULL,
+    item_id INTEGER NOT NULL,
+    buy_count INTEGER NOT NULL DEFAULT 0,
+    limit_type INTEGER NOT NULL DEFAULT 0,
+    reset_type INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (account_id, character_id, npc_id, item_id, limit_type, reset_type),
+    CHECK(limit_type IN (0, 1)),
+    CHECK(reset_type IN (0, 1))
+);";
+                command.ExecuteNonQuery();
+                command.CommandText = @"
+CREATE INDEX IF NOT EXISTS idx_item_purchase_limits_account_reset
+    ON item_purchase_limits(account_id, reset_type);";
+                command.ExecuteNonQuery();
+            }
         }
 
         private static void ImportCharacterNewItems(

@@ -195,6 +195,12 @@ namespace DfoGmTool
             app.MapGet("/api/characters/{id:int}/growoptions", (int id) => WithRuntime((gm, _) => gm.GetGrowOptions(id)));
             app.MapPost("/api/characters/{id:int}/growtype", (int id, GrowTypeRequest body) =>
                 WithRuntime((gm, _) => gm.SetGrowType(id, body.First, body.Second)));
+            app.MapGet("/api/characters/{id:int}/expertjob", (int id) =>
+                WithRuntime((gm, _) => gm.GetExpertJob(id)));
+            app.MapPost("/api/characters/{id:int}/expertjob", (int id, ExpertJobRequest body) =>
+                WithRuntime((gm, _) => gm.SetExpertJob(id, body.Type, body.Level, body.Exp)));
+            app.MapPost("/api/characters/{id:int}/expertjob/max", (int id, ExpertJobRequest body) =>
+                WithRuntime((gm, _) => gm.MaxExpertJob(id, body?.Type)));
             app.MapPost("/api/characters/{id:int}/quests/{questId:int}/ready", (int id, int questId) =>
                 WithRuntime((gm, _) => gm.MarkQuestReady(id, questId)));
             app.MapPost("/api/characters/{id:int}/quests/{questId:int}/complete", (int id, int questId) =>
@@ -377,5 +383,12 @@ namespace DfoGmTool
     {
         public int First { get; set; }
         public int Second { get; set; }
+    }
+
+    public sealed class ExpertJobRequest
+    {
+        public int Type { get; set; }
+        public int? Level { get; set; }
+        public long? Exp { get; set; }
     }
 }

@@ -282,6 +282,18 @@
             </div>
           </div>
           <div class="card">
+            <div class="card-title">副职业</div>
+            <div class="row">
+              <select id="expert-job-type"></select>
+              <label>等级 <input id="expert-job-level" type="number" min="1" style="width:70px"></label>
+              <label>经验 <input id="expert-job-exp" type="number" min="0" style="width:120px"></label>
+              <button id="btn-expert-job">覆写</button>
+              <button id="btn-expert-job-max">一键满级</button>
+            </div>
+            <div class="row"><span id="expert-job-now" class="hint">加载中…</span></div>
+            <div class="row"><span class="hint">类型/经验写 character_subtype0_fields；满级按当前 PVF 经验阈值写入，并补齐自动学习配方。在线角色需返回选角再进。</span></div>
+          </div>
+          <div class="card">
             <div class="card-title">货币入口</div>
             <div class="row"><span class="hint">金币/复活币/技能点在"背包 → 常用 → 货币"里直接覆写；点券/代币券在"账号数据管理"</span></div>
           </div>

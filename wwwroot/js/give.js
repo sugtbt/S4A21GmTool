@@ -315,9 +315,12 @@ function readGiveEquipmentInteger(selector, min, max, label) {
 }
 
 function giveResultToast(r) {
-  toast(r.viaMail
-    ? `已通过邮件发放 ${r.name || r.itemTemplateId} x${r.count}(邮件 #${r.messageId}, 在线角色邮箱领取)`
-    : `已发放 ${r.name || r.itemTemplateId} x${r.count} → 槽位 ${r.slot}`);
+  if (r.epicPiece)
+    toast(`已发放史诗碎片 ${r.name || r.itemTemplateId} x${r.count}（账号图鉴，不进背包/邮件）`);
+  else if (r.viaMail)
+    toast(`已通过邮件发放 ${r.name || r.itemTemplateId} x${r.count}(邮件 #${r.messageId}, 在线角色邮箱领取)`);
+  else
+    toast(`已发放 ${r.name || r.itemTemplateId} x${r.count} → 槽位 ${r.slot}`);
 }
 
 async function submitGiveEquipment() {

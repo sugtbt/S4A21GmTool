@@ -53,6 +53,22 @@ $('#btn-set-level').onclick = setLevel;
 $('#btn-sp').onclick = adjustSp;
 $('#grow-first').onchange = renderSecondOptions;
 $('#btn-grow').onclick = setGrowType;
+$('#btn-expert-job').onclick = setExpertJob;
+$('#btn-expert-job-max').onclick = maxExpertJob;
+$('#expert-job-type').onchange = () => {
+  const type = parseInt($('#expert-job-type').value, 10) || 0;
+  const hasJob = type > 0;
+  $('#expert-job-level').disabled = !hasJob;
+  $('#expert-job-exp').disabled = !hasJob;
+  $('#btn-expert-job-max').disabled = !hasJob;
+  const option = (expertJobState?.options || []).find((item) => item.type === type);
+  if (!hasJob || !option) return;
+  const same = expertJobState && expertJobState.type === type;
+  $('#expert-job-level').max = option.maxLevel;
+  $('#expert-job-level').value = same ? expertJobState.level : 1;
+  $('#expert-job-exp').max = option.maxExp;
+  $('#expert-job-exp').value = same ? expertJobState.exp : 0;
+};
 
 document.querySelectorAll('.quest-tab').forEach((tab) => {
   tab.onclick = () => {

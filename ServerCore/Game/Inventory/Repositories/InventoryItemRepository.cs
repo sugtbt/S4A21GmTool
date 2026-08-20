@@ -331,7 +331,11 @@ FROM account_inventory_items
             using (var reader = command.ExecuteReader())
             {
                 while (reader.Read())
-                    items.Add(InvenItemCodec.ReadItem(reader));
+                {
+                    var item = InvenItemCodec.ReadItem(reader);
+                    if (item != null)
+                        items.Add(item);
+                }
             }
         }
 

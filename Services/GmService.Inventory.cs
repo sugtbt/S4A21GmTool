@@ -87,6 +87,29 @@ namespace DfoGmTool.Services
                         pvfIndex));
                 }
 
+                foreach (var piece in inventory.EpicPieces.BuildEntries())
+                {
+                    items.Add(new
+                    {
+                        container = "史诗碎片",
+                        category = "史诗碎片",
+                        listType = EpicPieceDisplayListType,
+                        slot = piece.Index,
+                        templateId = piece.ItemId,
+                        name = pvfIndex.ResolveItemName(piece.ItemId),
+                        kind = "epic-piece",
+                        rarity = pvfIndex.ResolveItemRarity(piece.ItemId),
+                        count = piece.Count,
+                        instanceValue = piece.Count,
+                        durability = 0,
+                        expireTime = 0,
+                        supplementalExpiration = (object)null,
+                        templateExpiration = CreateTemplateExpiration(pvfIndex, piece.ItemId),
+                        seal = 0,
+                        deletable = false,
+                    });
+                }
+
                 return new { characterId, count = items.Count, items };
             }
         }
@@ -181,7 +204,24 @@ namespace DfoGmTool.Services
             return null;
         }
 
-        // 货币行(主背包 slot 0-2)删行会打坏钱包; 晶块(354-359)和账号金库是账号共享, 在账号面板管理
+        // 史诗碎片不是 InventoryListType 槽，只用于背包页只读展示（图鉴下标）。
+        private const int EpicPieceDisplayListType = -1;
+
+        private static bool TryParseInventoryListType(int listType, out InventoryListType list)
+        {
+            list = default;
+            if (listType < 0 || listType > byte.MaxValue)
+                return false;
+
+            var parsed = (InventoryListType)(byte)listType;
+            if (!Enum.IsDefined(typeof(InventoryListType), parsed))
+                return false;
+
+            list = parsed;
+            return true;
+        }
+
+        // 货币行(主背包 slot 0-2)删行会打坏钱包; 晶块(354-359)/灵魂(360-364)和账号金库是账号共享, 在账号面板管理
         private static bool IsDeletable(InventoryListType listType, int slot)
         {
             if (listType == InventoryListType.AccountCargo)
@@ -240,7 +280,8 @@ namespace DfoGmTool.Services
             if (!TryGetAccountId(characterId, out accountId))
                 return Error("角色不存在: " + characterId);
 
-            var list = (InventoryListType)listType;
+            if (!TryParseInventoryListType(listType, out var list))
+                return Error("不是物品槽，无法删除");
             if (!IsDeletable(list, slot))
                 return Error("该槽位不允许删除(货币行或账号金库)");
 
@@ -290,8 +331,8 @@ namespace DfoGmTool.Services
 
                 foreach (var entry in entries)
                 {
-                    var list = (InventoryListType)entry.ListType;
-                    if (!IsDeletable(list, entry.Slot))
+                    if (!TryParseInventoryListType(entry.ListType, out var list)
+                        || !IsDeletable(list, entry.Slot))
                     {
                         failed.Add(new { entry.ListType, entry.Slot, reason = "受保护槽位" });
                         continue;
@@ -312,7 +353,7 @@ namespace DfoGmTool.Services
             return new { success = true, characterId, deleted, failedCount = failed.Count, failed };
         }
 
-        // 主背包 slot 分段, 与服务端 ItemMetadataResolver.GetSlotRange / 各 Slot 常量一致
+        // 主背包 slot 分段，与 ItemSlotBoundService / InventoryService 虚拟槽一致。
         private static string ResolveMainSegment(int slot)
         {
             if (slot <= 2) return "货币";        // 0金币 1复活币 2胜点
@@ -322,8 +363,8 @@ namespace DfoGmTool.Services
             if (slot <= 176) return "材料";      // 121-176
             if (slot <= 232) return "任务品";    // 177-232
             if (slot <= 288) return "副职业材料"; // 233-288
-            if (slot <= 344) return "徽章";      // 289-344
-            if (slot <= 353) return "特殊材料";   // 345-353
+            if (slot <= ItemSlotBoundService.AvatarEmblemSlotEnd) return "徽章"; // 289-351
+            if (slot <= InventoryService.MainReservedSlotEnd) return "其他";    // 352-353 预留
             if (slot <= 359) return "账号晶块";   // 354-359 账号共享(accounts表列), 在账号面板调整
             if (slot <= 364) return "灵魂仓库";   // 360-364 账号共享(accounts.soul_*), 在账号面板调整
             return "其他";
@@ -406,6 +447,14 @@ namespace DfoGmTool.Services
                     }
                 }
                 return new { success = true, characterId, itemTemplateId, name, count, slot = CurrencyService.GetSoulWarehouseSlot(itemTemplateId) };
+            }
+
+            // 史诗碎片是账号图鉴数量，写 accounts.epic_piece_counts，不造 ItemCore、不进邮件。
+            if (EpicPieceCatalogService.IsEpicPieceId(itemTemplateId))
+            {
+                if (equipmentOptions != null)
+                    return Error("史诗碎片不能设置装备属性");
+                return GiveItemDirect(characterId, accountId, itemTemplateId, count, name);
             }
 
             // 复活币走主背包 1 号虚拟槽
@@ -654,6 +703,14 @@ namespace DfoGmTool.Services
             out string error)
         {
             error = null;
+            if (EpicPieceCatalogService.IsEpicPieceId(itemTemplateId)
+                || CurrencyService.IsAccountWarehouseItem(itemTemplateId))
+            {
+                attachments = Array.Empty<MailboxSendAttachmentRequest>();
+                error = "该物品不能作为邮件附件";
+                return false;
+            }
+
             if (equipment == null)
             {
                 attachments = new[]
@@ -719,6 +776,7 @@ namespace DfoGmTool.Services
             if (!grant.Success)
                 return Error(grant.Error ?? "发放失败(背包可能已满)");
 
+            var isEpicPiece = EpicPieceCatalogService.IsEpicPieceId(itemTemplateId);
             return new
             {
                 success = true,
@@ -726,9 +784,10 @@ namespace DfoGmTool.Services
                 itemTemplateId,
                 name,
                 count = grant.GrantedCount,
-                slot = (int)grant.AssignedSlot,
+                slot = isEpicPiece ? -1 : (int)grant.AssignedSlot,
                 expireTime = grant.ExpireTime,
                 slots = grant.AffectedSlots,
+                epicPiece = isEpicPiece,
             };
         }
 

@@ -68,13 +68,13 @@ ORDER BY category, slot_index;";
                     while (reader.Read())
                     {
                         var data = reader.IsDBNull(2) ? null : (byte[])reader[2];
-                        if (data == null || data.Length < ItemCore.Size)
+                        if (!ItemCore.TryFromBytes(data, out var core) || core == null)
                             continue;
 
                         model.AttachItem(
                             reader.GetInt32(0),
                             reader.GetInt32(1),
-                            ItemCore.FromBytes(data));
+                            core);
                     }
                 }
             }

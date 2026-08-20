@@ -42,6 +42,7 @@ namespace DfoGmTool.ServerCore.Game.Inventory
                 return Fail(result, "数量必须大于 0");
 
             // 晶块/灵魂/复活币是账号/钱包特殊资产, 由调用方走专门通道, 不属于角色物品发放。
+            // 史诗碎片走 InventoryRewardGrantService 的 EpicPiece 通道，写 accounts.epic_piece_counts。
             if (CurrencyService.IsAccountWarehouseItem(itemTemplateId)
                 || Game.ReviveCoin.ReviveCoinService.IsReviveCoinReward(itemTemplateId))
                 return Fail(result, "该特殊资产不属于角色物品发放");

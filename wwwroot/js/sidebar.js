@@ -355,6 +355,7 @@ async function selectCharacter(id, li) {
     loadStats();
     loadSpTp();
     loadGrowOptions();
+    loadExpertJob();
     loadItems();
     loadMailbox();
     loadQuests();

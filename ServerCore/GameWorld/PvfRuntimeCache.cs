@@ -17,6 +17,7 @@ namespace DfoGmTool.ServerCore.GameWorld
             ExpTableProvider.ResetForPvfChange();
             InitialCharacterSkills.ResetForPvfChange();
             ItemMetadataResolver.ResetForPvfChange();
+            EpicPieceCatalogService.ResetForPvfChange();
             ItemUpgradeTableProvider.ResetForPvfChange();
             CreatureExtraResolver.ResetForPvfChange();
             RentalWeaponInventoryMapper.ResetForPvfChange();

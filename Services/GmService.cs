@@ -12,8 +12,8 @@ using Microsoft.Data.Sqlite;
 
 namespace DfoGmTool.Services
 {
-    // 所有写操作都走服务端自己的业务代码(SqliteAssetService/CharacterProgressService/QuestRepository),
-    // GM 工具不自己拼物品数据。读操作用只读 SQL。
+    // 背包写走 InventoryRewardGrantService / InventoryDeleteService / InventoryPersistenceService，
+    // 不重新引入 SqliteAssetService / 旧 DTO。其它域走对应仓储与进度服务。
     // partial 按域拆分: Accounts(账号/货币/晶块/金库) Characters(角色/属性/转职)
     // Inventory(背包/发放/删除/钱包) Mailbox(角色邮箱查看/删除/清空)
     // Quests(任务总览/完成链) TitleBook(称号簿)
@@ -31,6 +31,7 @@ namespace DfoGmTool.Services
         private readonly SupplementalItemExpirationService _supplementalItemExpiration;
         private readonly Lazy<TitleBookMutationService> _titleBookMutation;
         private readonly AccountProgressService _accountProgress;
+        private readonly ExpertJobProgressService _expertJob;
         private readonly MailboxRepository _mailboxRepository;
 
         internal static void ResetPvfStaticData()
@@ -47,6 +48,7 @@ namespace DfoGmTool.Services
             _titleBookMutation = new Lazy<TitleBookMutationService>(
                 () => new TitleBookMutationService(config.ConnectionString));
             _accountProgress = new AccountProgressService(config.DatabasePath, config.SchemaPath, config.PvfPath);
+            _expertJob = new ExpertJobProgressService(config.ConnectionString, config.PvfPath);
             // 单次构造: ctor 内含 schema/迁移 bootstrap, 每次发放都 new 会全链路重跑
             _mailboxRepository = new MailboxRepository(config.DatabasePath, config.SchemaPath);
         }

@@ -4,7 +4,8 @@ using Microsoft.Data.Sqlite;
 
 namespace DfoGmTool.Services
 {
-    // A21 GM 只接受当前基线库。A12 或 82B ItemCore 库在任何物品解析前拒绝。
+    // 与服务端 SqliteMigrations 同一条准入：schema_metadata.baseline_id=86jp-database-v1。
+    // 已迁移的 A21 库可能仍带 character_invisible_falgs 等遗留表，不能据此判成 A12。
     internal static class A21DatabaseGuard
     {
         internal static void EnsureA21Baseline(SqliteConnection connection)
@@ -12,8 +13,7 @@ namespace DfoGmTool.Services
             if (connection == null)
                 throw new ArgumentNullException(nameof(connection));
 
-            if (SqliteMigrations.HasCurrentBaseline(connection)
-                && !HasLegacyItemCoreConstraint(connection))
+            if (SqliteMigrations.HasCurrentBaseline(connection))
                 return;
 
             throw new InvalidOperationException(BuildRejectionMessage(connection));
@@ -21,24 +21,15 @@ namespace DfoGmTool.Services
 
         private static string BuildRejectionMessage(SqliteConnection connection)
         {
-            if (LooksLikeA12(connection))
+            if (HasLegacyItemCoreConstraint(connection) || !TableExists(connection, "schema_metadata"))
             {
                 return "这是 A12 数据库，A21 GM 工具不会解析。"
                     + "请选择 servers4a21 的 inventory.db"
-                    + "（需要 schema_metadata.baseline_id=86jp-database-v1，ItemCore 99 字节）。";
+                    + "（需要 schema_metadata.baseline_id=86jp-database-v1）。";
             }
 
             return "数据库不是 A21 当前基线（86jp-database-v1），已停止解析。"
                 + "请打开 A21 服务端 Data/inventory.db，不要使用 A12 或其他旧库。";
-        }
-
-        private static bool LooksLikeA12(SqliteConnection connection)
-        {
-            return TableExists(connection, "character_invisible_falgs")
-                || TableExists(connection, "character_new_items")
-                || !TableExists(connection, "character_quest_completions")
-                || !TableExists(connection, "schema_metadata")
-                || HasLegacyItemCoreConstraint(connection);
         }
 
         private static bool HasLegacyItemCoreConstraint(SqliteConnection connection)

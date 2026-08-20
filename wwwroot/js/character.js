@@ -66,6 +66,81 @@ async function setGrowType() {
   }
 }
 
+// ---- 副职业 ----
+
+let expertJobState = null;
+
+async function loadExpertJob() {
+  if (!currentChar) return;
+  const epoch = selectEpoch;
+  try {
+    const data = await api(`/api/characters/${currentChar.characterId}/expertjob`);
+    if (epoch !== selectEpoch) return;
+    renderExpertJob(data);
+  } catch (e) {
+    $('#expert-job-now').textContent = e.message;
+    toast(e.message, true);
+  }
+}
+
+function renderExpertJob(data) {
+  expertJobState = data;
+  const typeSel = $('#expert-job-type');
+  typeSel.innerHTML = '';
+  for (const option of data.options || []) {
+    typeSel.innerHTML += `<option value="${option.type}">${escapeHtml(option.name)}</option>`;
+  }
+  typeSel.value = String(data.type);
+  $('#expert-job-level').value = data.level > 0 ? data.level : 1;
+  $('#expert-job-level').max = data.maxLevel > 0 ? data.maxLevel : 1;
+  $('#expert-job-exp').value = data.exp;
+  $('#expert-job-exp').max = data.maxExp > 0 ? data.maxExp : 0;
+  const hasJob = data.type > 0;
+  $('#expert-job-level').disabled = !hasJob;
+  $('#expert-job-exp').disabled = !hasJob;
+  $('#btn-expert-job-max').disabled = !hasJob;
+  const parts = [
+    hasJob ? `当前 ${data.typeName} Lv.${data.level} / ${data.maxLevel}` : '当前没有副职业',
+    hasJob ? `经验 ${Number(data.exp).toLocaleString()} / ${Number(data.maxExp).toLocaleString()}` : '',
+    hasJob && data.learnedRecipeCount >= 0 ? `已学配方 ${data.learnedRecipeCount}` : '',
+    hasJob && data.maxMachineGrade > 0 ? `设备 ${data.machineGrade}/${data.maxMachineGrade} 耐久 ${data.machineEndurance}` : '',
+  ].filter(Boolean);
+  $('#expert-job-now').textContent = parts.join(' · ');
+}
+
+async function setExpertJob() {
+  if (!currentChar) return;
+  const type = parseInt($('#expert-job-type').value, 10) || 0;
+  const payload = { type };
+  if (type > 0) {
+    const level = parseInt($('#expert-job-level').value, 10);
+    const exp = parseInt($('#expert-job-exp').value, 10);
+    if (Number.isSafeInteger(level) && level > 0) payload.level = level;
+    else if (Number.isSafeInteger(exp) && exp >= 0) payload.exp = exp;
+  }
+  try {
+    const data = await post(`/api/characters/${currentChar.characterId}/expertjob`, payload);
+    renderExpertJob(data);
+    toast(type > 0 ? `${data.typeName} 已覆写为 Lv.${data.level}` : '副职业已清除');
+    loadSpTp();
+  } catch (e) {
+    toast(e.message, true);
+  }
+}
+
+async function maxExpertJob() {
+  if (!currentChar) return;
+  const type = parseInt($('#expert-job-type').value, 10) || 0;
+  try {
+    const data = await post(`/api/characters/${currentChar.characterId}/expertjob/max`, { type });
+    renderExpertJob(data);
+    toast(`${data.typeName} 已一键满级`);
+    loadSpTp();
+  } catch (e) {
+    toast(e.message, true);
+  }
+}
+
 // ---- 基础属性表 ----
 
 async function loadStats() {

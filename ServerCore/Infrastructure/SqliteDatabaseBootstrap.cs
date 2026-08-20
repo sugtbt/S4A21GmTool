@@ -7,7 +7,7 @@ namespace DfoGmTool.ServerCore.Infrastructure
 {
     public static class SqliteDatabaseBootstrap
     {
-        private static readonly IReadOnlyList<(string ColumnName, string ColumnDefinition)> AccountSoulColumns =
+        private static readonly IReadOnlyList<(string ColumnName, string ColumnDefinition)> AccountExtraColumns =
             new[]
             {
                 ("soul_10100115", "INTEGER NOT NULL DEFAULT 0"),
@@ -15,14 +15,15 @@ namespace DfoGmTool.ServerCore.Infrastructure
                 ("soul_10099773", "INTEGER NOT NULL DEFAULT 0"),
                 ("soul_10099774", "INTEGER NOT NULL DEFAULT 0"),
                 ("soul_10099775", "INTEGER NOT NULL DEFAULT 0"),
+                ("epic_piece_counts", "BLOB NOT NULL DEFAULT X''"),
             };
 
         private static readonly object InitLock = new object();
         private static readonly HashSet<string> InitializedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         // 每个数据库文件每进程只初始化一次。
-        // 文件不存在时创建当前完整基线；文件存在时只校验新基线并执行新体系增量迁移。
-        // 没有正确 baseline_id 的历史数据库会被拒绝，不在服务启动路径中转换。
+        // 与服务端相同：已有库校验 86jp-database-v1 并执行已知增量迁移。
+        // GM 额外允许 schema 比工具新的库直接打开，不拒绝。
         public static string Initialize(string databasePath, string schemaFilePath)
         {
             var connectionString = BuildConnectionString(databasePath);
@@ -46,7 +47,7 @@ namespace DfoGmTool.ServerCore.Infrastructure
                         else
                             CreateCurrentDatabase(conn, File.ReadAllText(schemaFilePath));
 
-                        EnsureAccountSoulColumns(conn);
+                        EnsureAccountExtraColumns(conn);
 
                         // WAL 持久生效: 读写不互锁, 消除快速切角色时 database is locked
                         using (var walCmd = conn.CreateCommand())
@@ -104,7 +105,7 @@ namespace DfoGmTool.ServerCore.Infrastructure
             DfoGmTool.ServerCore.Sqlite.SqliteMigrations.Apply(connection);
         }
 
-        private static void EnsureAccountSoulColumns(SqliteConnection connection)
+        private static void EnsureAccountExtraColumns(SqliteConnection connection)
         {
             if (connection == null)
                 throw new ArgumentNullException(nameof(connection));
@@ -124,7 +125,7 @@ namespace DfoGmTool.ServerCore.Infrastructure
                 return;
 
             var missingColumns = new List<(string ColumnName, string ColumnDefinition)>();
-            foreach (var column in AccountSoulColumns)
+            foreach (var column in AccountExtraColumns)
             {
                 if (!existingColumns.Contains(column.ColumnName))
                     missingColumns.Add(column);
@@ -149,7 +150,7 @@ namespace DfoGmTool.ServerCore.Infrastructure
             }
 
             FileLogger.Log(
-                "[Db] accounts soul warehouse columns added: " +
+                "[Db] accounts extra columns added: " +
                 string.Join(", ", missingColumns.ConvertAll(column => column.ColumnName)));
         }
 

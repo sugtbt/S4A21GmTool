@@ -56,7 +56,7 @@ namespace DfoGmTool.ServerCore.Game.Mailbox
             int marker16,
             int petSerialOrHandle)
         {
-            if (itemCoreData != null && itemCoreData.Length >= ItemCore.Size)
+            if (itemCoreData != null && itemCoreData.Length >= ItemCore.LegacySize)
             {
                 var core = ItemCore.FromBytes(itemCoreData);
                 if (core != null && core.ItemId > 0)

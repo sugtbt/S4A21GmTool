@@ -25,6 +25,7 @@ namespace DfoGmTool.ServerCore.Game.Inventory
         InventoryItem = 1,
         MainVirtualCount = 2,
         Premium = 3,
+        EpicPiece = 5,
     }
 
     internal sealed class InventoryRewardGrantRequest
@@ -471,6 +472,9 @@ namespace DfoGmTool.ServerCore.Game.Inventory
             if (TryPlanPremium(itemTemplateId, count, request, out entry))
                 return true;
 
+            if (EpicPieceCatalogService.IsEpicPieceId(itemTemplateId))
+                return TryPlanEpicPiece(planningInventory, request, itemTemplateId, count, out entry, out error);
+
             if (TryResolveMainVirtualReward(itemTemplateId, out var slotIndex, out var slotItemId))
                 return TryPlanMainVirtualCount(planningInventory, request, itemTemplateId, count, slotIndex, slotItemId, out entry, out error);
 
@@ -568,6 +572,8 @@ namespace DfoGmTool.ServerCore.Game.Inventory
                     return TryApplyMainVirtualCount(inventory, entry, result);
                 case InventoryRewardGrantKind.InventoryItem:
                     return TryApplyInventoryItem(inventory, entry, result);
+                case InventoryRewardGrantKind.EpicPiece:
+                    return TryApplyEpicPiece(inventory, entry, result);
                 default:
                     return Fail(result, InventoryRewardGrantError.InvalidRequest);
             }
@@ -692,6 +698,74 @@ namespace DfoGmTool.ServerCore.Game.Inventory
             return true;
         }
 
+        private static bool TryPlanEpicPiece(
+            InventoryService planningInventory,
+            InventoryRewardGrantRequest request,
+            int itemTemplateId,
+            int count,
+            out InventoryRewardGrantPlanEntry entry,
+            out InventoryRewardGrantError error)
+        {
+            entry = null;
+            if (planningInventory == null)
+            {
+                error = InventoryRewardGrantError.InvalidInventory;
+                return false;
+            }
+
+            if (!planningInventory.EpicPieces.TryAddByPieceId(itemTemplateId, count, out var finalCount))
+            {
+                error = InventoryRewardGrantError.VirtualApplyFailed;
+                return false;
+            }
+
+            entry = new InventoryRewardGrantPlanEntry
+            {
+                Request = request,
+                Kind = InventoryRewardGrantKind.EpicPiece,
+                ItemTemplateId = itemTemplateId,
+                RequestedCount = count,
+                GrantedCount = count,
+                FinalCount = finalCount,
+                SpecialOutcome = new SpecialRewardOutcome
+                {
+                    Kind = SpecialRewardKind.EpicPiece,
+                    ItemTemplateId = itemTemplateId,
+                    Count = count,
+                    WalletNewTotal = finalCount,
+                },
+            };
+            error = InventoryRewardGrantError.None;
+            return true;
+        }
+
+        private static bool TryApplyEpicPiece(
+            InventoryService inventory,
+            InventoryRewardGrantPlanEntry entry,
+            InventoryRewardGrantResult result)
+        {
+            if (inventory == null)
+                return Fail(result, InventoryRewardGrantError.InvalidInventory);
+
+            if (entry == null
+                || !inventory.EpicPieces.TryAddByPieceId(
+                    entry.ItemTemplateId,
+                    entry.GrantedCount,
+                    out var finalCount))
+            {
+                return Fail(result, InventoryRewardGrantError.VirtualApplyFailed);
+            }
+
+            result.FinalCount = finalCount;
+            if (result.SpecialOutcome != null
+                && result.SpecialOutcome.Kind == SpecialRewardKind.EpicPiece)
+            {
+                result.SpecialOutcome.WalletNewTotal = finalCount;
+            }
+
+            return Complete(result);
+        }
+
         private static bool TryCreateSpecialOnlyResult(
             int itemTemplateId,
             int count,
@@ -706,6 +780,22 @@ namespace DfoGmTool.ServerCore.Game.Inventory
                 result.SpecialOutcome = new SpecialRewardOutcome
                 {
                     Kind = SpecialRewardKind.Premium,
+                    ItemTemplateId = itemTemplateId,
+                    Count = count,
+                };
+                return true;
+            }
+
+            if (EpicPieceCatalogService.IsEpicPieceId(itemTemplateId))
+            {
+                result.Success = true;
+                result.Error = InventoryRewardGrantError.None;
+                result.Kind = InventoryRewardGrantKind.EpicPiece;
+                result.ItemTemplateId = itemTemplateId;
+                result.GrantedCount = count;
+                result.SpecialOutcome = new SpecialRewardOutcome
+                {
+                    Kind = SpecialRewardKind.EpicPiece,
                     ItemTemplateId = itemTemplateId,
                     Count = count,
                 };
@@ -762,6 +852,7 @@ namespace DfoGmTool.ServerCore.Game.Inventory
             foreach (var item in source.GetMainVirtualCounts())
                 inventory.AttachMainVirtualCount(item.SlotIndex, item.ItemId, item.Count);
 
+            inventory.EpicPieces.CopyFrom(source.EpicPieces);
             inventory.ClearDirtyState();
             return inventory;
         }

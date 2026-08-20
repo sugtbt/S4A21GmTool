@@ -16,6 +16,7 @@ namespace DfoGmTool.ServerCore.Game.Inventory
     {
         Premium,
         ReviveCoin,
+        EpicPiece,
     }
 
     internal static class SpecialRewardRouter

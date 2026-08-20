@@ -26,6 +26,7 @@ namespace DfoGmTool.ServerCore.Game.Inventory
         public const byte KindSpecialMaterial = 11;
         public const byte KindGuildMedal = 12;
         public const byte KindGuardianGem = 13;
+        public const byte KindEpicPiece = 14;
 
         public const int ItemKindOffset = 0;
         public const int ItemIdOffset = 1;
@@ -602,6 +603,24 @@ namespace DfoGmTool.ServerCore.Game.Inventory
             return buffer;
         }
 
+        public static bool TryFromBytes(byte[] data, out ItemCore item)
+        {
+            item = null;
+            if (data == null || data.Length < LegacySize)
+                return false;
+
+            try
+            {
+                item = FromBytes(data);
+                return item != null;
+            }
+            catch
+            {
+                item = null;
+                return false;
+            }
+        }
+
         public static ItemCore FromBytes(byte[] data)
         {
             if (data == null)
@@ -612,9 +631,23 @@ namespace DfoGmTool.ServerCore.Game.Inventory
 
         public static ItemCore FromBytes(ReadOnlySpan<byte> data)
         {
-            if (data.Length < Size)
-                throw new ArgumentException("ItemCore 字节长度不足。", nameof(data));
+            if (data.Length < LegacySize)
+                throw new ArgumentException(
+                    $"ItemCore 字节长度不足（需要至少 {LegacySize} 字节，实际 {data.Length}）。",
+                    nameof(data));
 
+            if (data.Length >= Size)
+                return ParseFixed(data);
+
+            // 读侧兼容尚未补尾的 82–98B 行；写入一律走 ToBytes()，固定 99B。
+            Span<byte> padded = stackalloc byte[Size];
+            padded.Clear();
+            data.CopyTo(padded);
+            return ParseFixed(padded);
+        }
+
+        private static ItemCore ParseFixed(ReadOnlySpan<byte> data)
+        {
             var item = new ItemCore
             {
                 ItemKind = data[ItemKindOffset],

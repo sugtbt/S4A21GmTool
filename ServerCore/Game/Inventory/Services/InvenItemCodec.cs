@@ -32,6 +32,9 @@ namespace DfoGmTool.ServerCore.Game.Inventory
             if (record == null)
                 throw new ArgumentNullException(nameof(record));
 
+            if (!ItemCore.TryFromBytes(record.ItemCoreBlob, out var core) || core == null)
+                return null;
+
             return new InventoryItem
             {
                 ItemUid = record.ItemUid,
@@ -40,7 +43,7 @@ namespace DfoGmTool.ServerCore.Game.Inventory
                 CharacterId = record.CharacterId,
                 ListType = record.ListType,
                 SlotIndex = record.SlotIndex,
-                Core = ItemCore.FromBytes(record.ItemCoreBlob),
+                Core = core,
                 CreatedAt = record.CreatedAt,
                 UpdatedAt = record.UpdatedAt,
             };

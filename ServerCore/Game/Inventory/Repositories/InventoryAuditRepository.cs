@@ -184,11 +184,10 @@ LIMIT 1;";
                 return null;
 
             var data = (byte[])value;
-            if (data.Length < ItemCore.Size)
+            if (!ItemCore.TryFromBytes(data, out var core) || core == null || core.IsEmpty)
                 return null;
 
-            var core = ItemCore.FromBytes(data);
-            return core.IsEmpty ? null : core;
+            return core;
         }
     }
 }

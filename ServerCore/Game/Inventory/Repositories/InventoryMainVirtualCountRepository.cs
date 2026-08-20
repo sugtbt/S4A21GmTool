@@ -30,10 +30,8 @@ ORDER BY slot_index;";
                             continue;
 
                         var coreBytes = reader.IsDBNull(1) ? Array.Empty<byte>() : (byte[])reader[1];
-                        if (coreBytes.Length < ItemCore.Size)
+                        if (!ItemCore.TryFromBytes(coreBytes, out var core) || core == null)
                             continue;
-
-                        var core = ItemCore.FromBytes(coreBytes);
                         result.Add(new VirtualCountItem
                         {
                             SlotIndex = slotIndex,
@@ -118,10 +116,10 @@ LIMIT 1;";
                     return 0;
 
                 var data = (byte[])value;
-                if (data.Length < ItemCore.Size)
+                if (!ItemCore.TryFromBytes(data, out var core) || core == null)
                     return 0;
 
-                return Math.Max(0, ItemCore.FromBytes(data).Count);
+                return Math.Max(0, core.Count);
             }
         }
 
