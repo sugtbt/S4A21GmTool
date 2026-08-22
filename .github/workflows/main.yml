@@ -74,7 +74,7 @@ jobs:
       - name: Publish Project (Optimized)
         if: env.HAS_UPDATE == 'true'
         run: |
-          dotnet publish -c Release -r win-x64 --self-contained false \
+          dotnet publish DfoGmTool.csproj -c Release -r win-x64 --self-contained false \
             -p:PublishReadyToRun=true \
             -p:DebugType=none \
             -o ./publish_output
