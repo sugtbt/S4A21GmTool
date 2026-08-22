@@ -1,0 +1,104 @@
+name: Sync Upstream and Build Release
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * *'
+
+permissions:
+  contents: write
+
+jobs:
+  sync-and-build:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0 
+          
+      - name: Sync upstream via Merge
+        id: sync
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          git remote add upstream https://gitgud.io/rewio/S4A21GmTool.git || true
+          git fetch upstream
+          
+          UPSTREAM_BRANCH=$(git symbolic-ref refs/remotes/upstream/HEAD 2>/dev/null | sed 's@^refs/remotes/upstream/@@' || echo "")
+          if [ -z "$UPSTREAM_BRANCH" ]; then
+            if git show-ref --verify --quiet refs/remotes/upstream/main; then
+              UPSTREAM_BRANCH="main"
+            else
+              UPSTREAM_BRANCH="master"
+            fi
+          fi
+          
+          echo "Merging from upstream/$UPSTREAM_BRANCH"
+          BEFORE_COMMIT=$(git rev-parse HEAD)
+          
+          git merge "upstream/$UPSTREAM_BRANCH" --no-edit --allow-unrelated-histories || echo "Merge completed or already up to date."
+          
+          AFTER_COMMIT=$(git rev-parse HEAD)
+          
+          if [ "$BEFORE_COMMIT" != "$AFTER_COMMIT" ]; then
+            echo "Updates found. Pushing merge commit..."
+            git push origin HEAD:${{ github.ref }}
+            echo "HAS_UPDATE=true" >> $GITHUB_ENV
+          else
+            echo "No updates from upstream."
+            echo "HAS_UPDATE=false" >> $GITHUB_ENV
+          fi
+
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "Manual trigger detected. Forcing build and release."
+            echo "HAS_UPDATE=true" >> $GITHUB_ENV
+          fi
+
+      - name: Setup .NET 10.0
+        if: env.HAS_UPDATE == 'true'
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore dependencies
+        if: env.HAS_UPDATE == 'true'
+        run: dotnet restore
+
+      - name: Build Project
+        if: env.HAS_UPDATE == 'true'
+        run: dotnet build --no-restore --configuration Release
+
+      - name: Publish Project (Optimized)
+        if: env.HAS_UPDATE == 'true'
+        run: |
+          dotnet publish -c Release -r win-x64 --self-contained false \
+            -p:PublishReadyToRun=true \
+            -p:DebugType=none \
+            -o ./publish_output
+
+      - name: Package with wwwroot
+        if: env.HAS_UPDATE == 'true'
+        run: |
+          # 兜底检查：确保 wwwroot 被正确复制到发布目录
+          if [ -d "./wwwroot" ] && [ ! -d "./publish_output/wwwroot" ]; then
+            echo "Copying wwwroot to publish output..."
+            cp -r ./wwwroot ./publish_output/
+          fi
+          
+          cd publish_output
+          zip -r ../86JPGMTool-Release.zip .
+
+      - name: Create GitHub Release
+        if: env.HAS_UPDATE == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: 86JPGMTool-Release.zip
+          tag_name: build-${{ github.run_number }}
+          name: Release Build ${{ github.run_number }}
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
