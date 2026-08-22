@@ -272,8 +272,7 @@ namespace DfoGmTool.Services
             return container;
         }
 
-        // 走服务端 DELETE_ITEM 同款入口(InventoryDeleteService.TryDeleteForClient):
-        // 排列锁清理/整删部分删的语义都由服务端代码处理
+        // 整槽删除走 TryRemoveSlot（含时装/未知物品）；部分数量仍走客户端删除入口。
         public object DeleteItemAt(int characterId, int listType, int slot, int count)
         {
             int accountId;
@@ -292,9 +291,12 @@ namespace DfoGmTool.Services
                 if (inventory == null)
                     return Error("背包加载失败");
 
-                InventoryMutationResult result;
-                if (!InventoryDeleteService.TryDeleteForClient(
-                        inventory, list, (short)slot, count, out result))
+                InventoryMutationResult result = null;
+                var removed = count <= 0
+                    ? InventoryDeleteService.TryRemoveSlot(inventory, list, (short)slot, out _)
+                    : InventoryDeleteService.TryDeleteForClient(
+                        inventory, list, (short)slot, count, out result);
+                if (!removed)
                     return Error("删除失败(槽位为空或该列表不支持删除)");
 
                 if (!GmInventoryStore.Save(conn, characterId, inventory))
@@ -338,9 +340,8 @@ namespace DfoGmTool.Services
                         continue;
                     }
 
-                    InventoryMutationResult result;
-                    if (InventoryDeleteService.TryDeleteForClient(
-                            inventory, list, (short)entry.Slot, 0, out result))
+                    if (InventoryDeleteService.TryRemoveSlot(
+                            inventory, list, (short)entry.Slot, out _))
                         deleted++;
                     else
                         failed.Add(new { entry.ListType, entry.Slot, reason = "删除失败" });

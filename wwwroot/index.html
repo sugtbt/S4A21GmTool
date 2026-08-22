@@ -278,6 +278,15 @@
 
         <div id="char-tab-level" class="char-tab-page">
           <div class="card">
+            <div class="card-title">角色名</div>
+            <div class="row">
+              <input id="name-input" type="text" maxlength="18" autocomplete="off">
+              <button id="btn-rename">改名</button>
+              <span id="name-now" class="hint"></span>
+            </div>
+            <div class="row"><span class="hint">中文、英文或数字，2-18 字节，全服唯一。在线角色需返回选角再进。</span></div>
+          </div>
+          <div class="card">
             <div class="card-title">等级</div>
             <div class="row">
               <input id="level-input" type="number" min="1" max="86">

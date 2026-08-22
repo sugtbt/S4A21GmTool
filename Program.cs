@@ -67,6 +67,16 @@ namespace DfoGmTool
                 });
             }
 
+            app.Use(async (context, next) =>
+            {
+                if (context.Request.Path.StartsWithSegments("/api"))
+                {
+                    context.Response.Headers.CacheControl = "no-store";
+                    context.Response.Headers.Pragma = "no-cache";
+                }
+                await next(context);
+            });
+
             // 本地工具: 异常直接以 JSON 返回, 方便定位
             app.Use(async (context, next) =>
             {
@@ -197,6 +207,8 @@ namespace DfoGmTool
                 WithRuntime((gm, _) => gm.AdjustCera(id, body.Amount, body.Type)));
             app.MapPost("/api/characters/{id:int}/level", (int id, LevelRequest body) =>
                 WithRuntime((gm, _) => gm.SetLevel(id, body.Level)));
+            app.MapPost("/api/characters/{id:int}/name", (int id, RenameRequest body) =>
+                WithRuntime((gm, _) => gm.RenameCharacter(id, body.Name)));
             app.MapPost("/api/characters/{id:int}/sp", (int id, SpRequest body) =>
                 WithRuntime((gm, _) => gm.AdjustSpTp(id, body.Sp, body.Tp)));
             app.MapGet("/api/characters/{id:int}/growoptions", (int id) => WithRuntime((gm, _) => gm.GetGrowOptions(id)));
@@ -399,6 +411,11 @@ namespace DfoGmTool
     public sealed class LevelRequest
     {
         public int Level { get; set; }
+    }
+
+    public sealed class RenameRequest
+    {
+        public string Name { get; set; }
     }
 
     public sealed class SpRequest

@@ -51,6 +51,8 @@ $('#btn-clear-mail').onclick = clearMailbox;
 $('#btn-clear-category').onclick = clearCurrentCategory;
 $('#inventory-expiration').onchange = () => { invPage = 0; renderItemTable(); };
 $('#btn-account-panel').onclick = showAccountPanel;
+$('#btn-rename').onclick = renameCharacter;
+$('#name-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') renameCharacter(); });
 $('#btn-set-level').onclick = setLevel;
 $('#btn-sp').onclick = adjustSp;
 $('#grow-first').onchange = renderSecondOptions;

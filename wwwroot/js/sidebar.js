@@ -350,6 +350,8 @@ async function selectCharacter(id, li) {
       `<b>${escapeHtml(c.name)}</b> Lv.${c.level} ${escapeHtml(c.jobName)}` +
       `<span class="wallet">金币 ${c.wallet.gold.toLocaleString()} · 点券 ${c.wallet.cera.toLocaleString()}` +
       ` · SP+${c.bonusSp} TP+${c.bonusTp}</span>`;
+    $('#name-input').value = c.name;
+    $('#name-now').textContent = `当前 ${c.name}`;
     $('#level-input').value = c.level;
     $('#level-now').textContent = `当前 Lv.${c.level}, 经验 ${Number(c.exp).toLocaleString()}`;
     loadStats();

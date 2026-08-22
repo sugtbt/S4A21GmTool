@@ -66,19 +66,28 @@ let inventoryItems = [];
 let activeCategory = '全部';
 const INV_PAGE_SIZE = 10;
 let invPage = 0; // 切分类归零; 数据刷新后越界自动回退末页
+let invLoadSeq = 0;
 
 async function loadItems() {
   if (!currentChar) return;
   const epoch = selectEpoch;
+  const seq = ++invLoadSeq;
   try {
     const data = await api(`/api/characters/${currentChar.characterId}/items`);
-    if (epoch !== selectEpoch) return;
+    if (epoch !== selectEpoch || seq !== invLoadSeq) return;
     inventoryItems = data.items;
     renderCategoryNav();
     renderItemTable();
   } catch (e) {
+    if (epoch !== selectEpoch || seq !== invLoadSeq) return;
     toast(e.message, true);
   }
+}
+
+function dropInventoryRow(listType, slot) {
+  inventoryItems = inventoryItems.filter((item) => item.listType !== listType || item.slot !== slot);
+  renderCategoryNav();
+  renderItemTable();
 }
 
 function renderCategoryNav() {
@@ -221,6 +230,7 @@ function renderItemTable() {
         // count=0 整删, 单件删除直接生效
         await post(`/api/characters/${currentChar.characterId}/items/delete-at`,
           { listType: item.listType, slot: item.slot, count: 0 });
+        dropInventoryRow(item.listType, item.slot);
         toast('已删除');
         loadItems();
       } catch (e) {

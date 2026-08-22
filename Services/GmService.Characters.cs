@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using DfoGmTool.ServerCore.Game.TitleBook;
 using DfoGmTool.ServerCore.Game.Characters;
 using DfoGmTool.ServerCore.Game.Currency;
@@ -109,6 +110,123 @@ FROM characters WHERE character_id = @cid;";
                     }
                 }
             }
+        }
+
+        // 只改 characters.name。UTF-8 2-18 字节，中英文数字，全库唯一（含已删除）。
+        public object RenameCharacter(int characterId, string name)
+        {
+            if (!TryNormalizeCharacterName(name, out var text, out var nameBytes, out var error))
+                return Error(error);
+            if (!TryGetAccountId(characterId, out _))
+                return Error("角色不存在: " + characterId);
+
+            using (var conn = new SqliteConnection(_config.ConnectionString))
+            {
+                conn.Open();
+                using (var cmd = conn.CreateCommand())
+                {
+                    cmd.CommandText = "SELECT name FROM characters WHERE character_id = @cid;";
+                    cmd.Parameters.AddWithValue("@cid", characterId);
+                    var current = cmd.ExecuteScalar();
+                    if (current == null || current == DBNull.Value)
+                        return Error("角色不存在: " + characterId);
+                    if (IsSameCharacterName(current, text, nameBytes))
+                        return new { success = true, characterId, name = text };
+                }
+
+                using (var cmd = conn.CreateCommand())
+                {
+                    cmd.CommandText = @"
+SELECT character_id FROM characters
+WHERE (name = @name OR name = @nameBytes) AND character_id != @cid
+LIMIT 1;";
+                    cmd.Parameters.AddWithValue("@name", text);
+                    cmd.Parameters.AddWithValue("@nameBytes", nameBytes);
+                    cmd.Parameters.AddWithValue("@cid", characterId);
+                    var taken = cmd.ExecuteScalar();
+                    if (taken != null && taken != DBNull.Value)
+                        return Error("该角色名已被占用（含已删除角色）");
+                }
+
+                try
+                {
+                    using (var cmd = conn.CreateCommand())
+                    {
+                        cmd.CommandText = @"
+UPDATE characters
+SET name = @nameBytes, updated_at = CURRENT_TIMESTAMP
+WHERE character_id = @cid;";
+                        cmd.Parameters.AddWithValue("@nameBytes", nameBytes);
+                        cmd.Parameters.AddWithValue("@cid", characterId);
+                        if (cmd.ExecuteNonQuery() == 0)
+                            return Error("写入失败");
+                    }
+                }
+                catch (SqliteException ex) when (ex.SqliteErrorCode == 19)
+                {
+                    return Error("该角色名已被占用（含已删除角色）");
+                }
+            }
+
+            return new { success = true, characterId, name = text };
+        }
+
+        // 数字、拉丁字母、CJK 统一汉字；UTF-8 2-18 字节。
+        private static bool TryNormalizeCharacterName(
+            string name,
+            out string text,
+            out byte[] nameBytes,
+            out string error)
+        {
+            text = (name ?? string.Empty).Trim();
+            nameBytes = Array.Empty<byte>();
+            if (text.Length == 0)
+            {
+                error = "名字不能为空";
+                return false;
+            }
+
+            nameBytes = new UTF8Encoding(false, true).GetBytes(text);
+            if (nameBytes.Length < 2 || nameBytes.Length > 18)
+            {
+                error = "名字长度须为 2-18 字节";
+                return false;
+            }
+
+            if (!IsAllowedCharacterName(text))
+            {
+                error = "名字只能用中文、英文和数字";
+                return false;
+            }
+
+            error = null;
+            return true;
+        }
+
+        private static bool IsSameCharacterName(object stored, string text, byte[] nameBytes)
+        {
+            if (stored is byte[] storedBytes)
+                return storedBytes.AsSpan().SequenceEqual(nameBytes);
+            return stored is string storedText
+                && string.Equals(storedText, text, StringComparison.Ordinal);
+        }
+
+        private static bool IsAllowedCharacterName(string text)
+        {
+            for (var i = 0; i < text.Length; i++)
+            {
+                var ch = text[i];
+                if (char.IsHighSurrogate(ch) || char.IsLowSurrogate(ch))
+                    return false;
+                var code = (int)ch;
+                var allowed = (code >= 48 && code <= 57)
+                    || (code >= 65 && code <= 90)
+                    || (code >= 97 && code <= 122)
+                    || (code >= 19968 && code <= 40908);
+                if (!allowed)
+                    return false;
+            }
+            return true;
         }
 
         // 基础属性表: 用服务端 CharacterStatComputer 按 职业/等级/转职/觉醒 计算,
