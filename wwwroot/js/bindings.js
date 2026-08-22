@@ -13,6 +13,7 @@ $('#give-equipment-form').onsubmit = (event) => {
 $('#btn-cancel-give-equipment').onclick = () => closeGiveEquipmentModal();
 $('#btn-close-give-equipment').onclick = () => closeGiveEquipmentModal();
 $('#give-equipment-state').onchange = updateGiveEquipmentFields;
+$('#give-equipment-send-set').onchange = updateGiveEquipmentSetMode;
 for (const sel of ['#give-equipment-count', '#give-equipment-reinforce-level',
   '#give-equipment-amplify-level', '#give-equipment-forging-level']) {
   $(sel).addEventListener('input', () => $(sel).setCustomValidity(''));

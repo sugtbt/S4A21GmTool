@@ -479,10 +479,16 @@
         <label id="give-equipment-forging-field" class="give-equipment-field hidden">锻造等级
           <input id="give-equipment-forging-level" type="number" min="0" max="8" step="1" value="0" required>
         </label>
-        <label class="give-equipment-field">发送数量
+        <label id="give-equipment-count-field" class="give-equipment-field">发送数量
           <input id="give-equipment-count" type="number" min="1" max="10" step="1" value="1" required>
         </label>
       </div>
+
+      <label id="give-equipment-send-set-field" class="give-equipment-set hidden">
+        <input id="give-equipment-send-set" type="checkbox">
+        <span>发送整套</span>
+        <span id="give-equipment-set-hint" class="hint"></span>
+      </label>
 
       <div class="give-equipment-actions">
         <button id="btn-cancel-give-equipment" class="mini" type="button">取消</button>

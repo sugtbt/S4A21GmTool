@@ -199,6 +199,7 @@ function renderItemPreview(data) {
   if (data.explain && data.explain !== data.basicExplain) sections.push(previewSection(data.explain));
   if (data.stats && data.stats.length)
     sections.push(`<div class="item-preview-stats">${data.stats.map((line) => formatDnfText(line)).join('<br>')}</div>`);
+  if (data.set) sections.push(renderSetPreview(data.set));
   if (data.detailExplain) sections.push(previewSection(data.detailExplain, 'item-preview-detail'));
   if (data.flavorText) sections.push(previewSection(data.flavorText, 'item-preview-flavor'));
   sections.push(`<div class="item-preview-expire">${templateExpirationLabel(data)}</div>`);
@@ -216,6 +217,26 @@ function renderItemPreview(data) {
 
 function previewSection(text, extraClass) {
   return `<div class="item-preview-text${extraClass ? ' ' + extraClass : ''}">${formatDnfText(text)}</div>`;
+}
+
+function renderSetPreview(set) {
+  if (!set) return '';
+  const pieces = Array.isArray(set.pieces) ? set.pieces : [];
+  const bonuses = Array.isArray(set.bonuses) ? set.bonuses : [];
+  const pieceHtml = pieces.map((piece) => {
+    const icon = piece.hasIcon && canPreviewIcons()
+      ? `<img class="item-preview-set-icon" src="${itemIconUrl(piece.itemId)}" alt="" width="22" height="22" onerror="this.classList.add('missing')">`
+      : '';
+    return `<div class="item-preview-set-piece">${icon}<span>${escapeHtml(piece.name || ('#' + piece.itemId))}</span></div>`;
+  }).join('');
+  const bonusHtml = bonuses.map((bonus) =>
+    `<div class="item-preview-set-bonus"><span class="item-preview-set-count">${bonus.count}件</span> ${formatDnfText(bonus.text || '')}</div>`
+  ).join('');
+  return `<div class="item-preview-set">` +
+    `<div class="item-preview-set-name">套装 ${escapeHtml(set.name || '')}</div>` +
+    (pieceHtml ? `<div class="item-preview-set-pieces">${pieceHtml}</div>` : '') +
+    bonusHtml +
+    `</div>`;
 }
 
 function placeItemPreview(host) {

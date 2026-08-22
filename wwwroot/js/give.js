@@ -173,7 +173,7 @@ async function searchItems(page) {
       const tr = document.createElement('tr');
       const isEquipment = r.kind === 'equipment';
       tr.innerHTML = `<td>${r.itemId}</td>
-        <td>${itemPreviewName(r.itemId, r.name, r.rarity)}</td>
+        <td>${itemPreviewName(r.itemId, r.name, r.rarity)}${r.setName ? `<div class="hint">${escapeHtml(r.setName)}</div>` : ''}</td>
         <td>${r.minLevel || ''}</td>
         <td>${r.special ? (SPECIAL_LABELS[r.special] || escapeHtml(r.special)) : (RARITY_LABELS[r.rarity] || r.rarity)}</td>
         <td title="${escapeHtml(r.tag || '')}">${escapeHtml(tagLabel(r.tag))}</td>
@@ -256,6 +256,15 @@ function openGiveEquipmentModal(item, opener) {
 
   $('#give-equipment-name').innerHTML = itemPreviewName(item.itemId, item.name || `物品 ${item.itemId}`, item.rarity);
   $('#give-equipment-meta').textContent = `ID ${item.itemId} · ${tagLabel(item.tag)}`;
+  const canSendSet = Number(item.setId) > 0;
+  $('#give-equipment-send-set-field').classList.toggle('hidden', !canSendSet);
+  $('#give-equipment-send-set').checked = false;
+  $('#give-equipment-send-set').disabled = canSendSet && item.setSendable === false;
+  $('#give-equipment-set-hint').textContent = !canSendSet
+    ? ''
+    : item.setSendable === false
+      ? (item.setName ? `${item.setName}（无法对齐为可发放的整套）` : '无法对齐为可发放的整套')
+      : (item.setName ? `${item.setName}，每部位 1 件；超过 10 件自动拆成两封邮件` : '每部位 1 件；超过 10 件自动拆成两封邮件');
   $('#give-equipment-upgrade-fields').classList.toggle('hidden', !canUpgrade && !canAmplify);
   $('#give-equipment-forging-field').classList.toggle('hidden', !isWeapon);
   for (const value of ['unpurified', 'amplified']) {
@@ -271,6 +280,7 @@ function openGiveEquipmentModal(item, opener) {
   $('#give-equipment-quality-mode').value = 'top';
   $('#give-equipment-count').value = '1';
   updateGiveEquipmentFields();
+  updateGiveEquipmentSetMode();
   setGiveEquipmentSubmitting(false);
   $('#give-equipment-panel').classList.remove('hidden');
 
@@ -282,12 +292,27 @@ function openGiveEquipmentModal(item, opener) {
   }, 0);
 }
 
+function isGiveEquipmentSendSet() {
+  const field = $('#give-equipment-send-set-field');
+  return field && !field.classList.contains('hidden') && $('#give-equipment-send-set').checked;
+}
+
+function updateGiveEquipmentSetMode() {
+  const sendSet = isGiveEquipmentSendSet();
+  $('#give-equipment-count-field').classList.toggle('hidden', sendSet);
+  if (sendSet) $('#give-equipment-count').value = '1';
+  if (!giveEquipmentModalState || !giveEquipmentModalState.submitting)
+    $('#btn-submit-give-equipment').textContent = sendSet ? '发送整套' : '发送';
+}
+
 function setGiveEquipmentSubmitting(submitting) {
   if (giveEquipmentModalState) giveEquipmentModalState.submitting = submitting;
   $('#btn-submit-give-equipment').disabled = submitting;
   $('#btn-cancel-give-equipment').disabled = submitting;
   $('#btn-close-give-equipment').disabled = submitting;
-  $('#btn-submit-give-equipment').textContent = submitting ? '发送中…' : '发送';
+  $('#btn-submit-give-equipment').textContent = submitting
+    ? '发送中…'
+    : (isGiveEquipmentSendSet() ? '发送整套' : '发送');
 }
 
 function closeGiveEquipmentModal(force) {
@@ -317,7 +342,11 @@ function readGiveEquipmentInteger(selector, min, max, label) {
 function giveResultToast(r) {
   if (r.epicPiece)
     toast(`已发放史诗碎片 ${r.name || r.itemTemplateId} x${r.count}（账号图鉴，不进背包/邮件）`);
-  else if (r.viaMail)
+  else if (r.sendSet && r.viaMail) {
+    const ids = Array.isArray(r.messageIds) ? r.messageIds.join('、') : r.messageId;
+    const prefix = r.partial ? '部分发放：' : '';
+    toast(`${prefix}已通过 ${r.mailCount || 1} 封邮件发放套装 ${r.name || r.itemTemplateId}（${r.itemCount || r.count} 件，邮件 #${ids}）`);
+  } else if (r.viaMail)
     toast(`已通过邮件发放 ${r.name || r.itemTemplateId} x${r.count}(邮件 #${r.messageId}, 在线角色邮箱领取)`);
   else
     toast(`已发放 ${r.name || r.itemTemplateId} x${r.count} → 槽位 ${r.slot}`);
@@ -332,7 +361,8 @@ async function submitGiveEquipment() {
     return;
   }
 
-  const count = readGiveEquipmentInteger('#give-equipment-count', 1, GIVE_EQUIPMENT_MAX_COUNT, '发送数量');
+  const sendSet = isGiveEquipmentSendSet();
+  const count = sendSet ? 1 : readGiveEquipmentInteger('#give-equipment-count', 1, GIVE_EQUIPMENT_MAX_COUNT, '发送数量');
   if (count == null) return;
 
   const state = modal.canUpgrade || modal.canAmplify ? selectedGiveEquipmentState() : 'normal';
@@ -358,6 +388,7 @@ async function submitGiveEquipment() {
     const r = await post(`/api/characters/${modal.characterId}/items`, {
       templateId: modal.item.itemId,
       count,
+      sendSet,
       equipmentOptions: { state, upgradeLevel, amplifyType, forgingLevel, qualityMode },
     });
     giveResultToast(r);

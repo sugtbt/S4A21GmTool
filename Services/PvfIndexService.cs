@@ -9,10 +9,9 @@ using GmPvfLib;
 
 namespace DfoGmTool.Services
 {
-    // 从 Script.pvf 建物品/任务名字索引, 用于搜索和发放前校验。
-    // 索引建完就释放归档本体, 常驻内存只有名字字典。
-    // partial 按域拆分: Items(物品索引/搜索/分类) Jobs(职业名/转职觉醒)
-    // Quests(任务元数据) World(区域/副本/地图映射)
+    // 从 Script.pvf 建物品/任务/套装索引，用于搜索、预览和发放前校验。
+    // 索引建完就释放归档本体；常驻内存是物品、套装、任务字典。
+    // partial 按域拆分: Items Jobs Quests World Sets Preview/PreviewStats
     public sealed partial class PvfIndexService
     {
         private static readonly Regex NamePattern = new Regex(@"\[name\]\s*`([^`]*)`", RegexOptions.Compiled);
@@ -25,6 +24,8 @@ namespace DfoGmTool.Services
         private volatile Dictionary<int, int> _itemRarities;
         private volatile Dictionary<int, ItemExpirationDefinition> _itemExpirations;
         private volatile Dictionary<int, ItemEntry> _itemsById;
+        private volatile Dictionary<int, EquipmentSetInfo> _setsById;
+        private volatile Dictionary<int, List<int>> _setMemberIds;
         private volatile Dictionary<int, QuestMeta> _questMeta;
         private volatile Dictionary<string, string> _regionNames;
         private volatile Dictionary<int, string> _dungeonRegion;
@@ -66,6 +67,8 @@ namespace DfoGmTool.Services
             Interlocked.Exchange(ref _parseFailures, 0);
             var itemNames = new Dictionary<int, string>();
             var searchList = new List<ItemEntry>();
+            Dictionary<int, EquipmentSetInfo> setsById = null;
+            Dictionary<int, List<int>> setMemberIds = null;
 
             using (var archive = PvfArchive.Open(_pvfPath))
             {
@@ -80,6 +83,8 @@ namespace DfoGmTool.Services
                     _amplifyEquipmentMinimumLevel = Math.Max(0, AmplifyItemFile.Parse(amplifyConfig).EquipLevelConst);
                 BuildKind(archive, "equipment/equipment.lst", "equipment", itemNames, searchList);
                 BuildKind(archive, "stackable/stackable.lst", "stackable", itemNames, searchList);
+                LinkBeadCardStats(searchList);
+                BuildEquipmentSets(archive, searchList, out setsById, out setMemberIds);
                 _questMeta = BuildQuestMeta(archive);
             }
 
@@ -115,8 +120,11 @@ namespace DfoGmTool.Services
             _itemExpirations = itemExpirations;
             _itemNames = itemNames;
             _itemsById = itemsById;
+            _setsById = setsById ?? new Dictionary<int, EquipmentSetInfo>();
+            _setMemberIds = setMemberIds ?? new Dictionary<int, List<int>>();
             var failures = _parseFailures;
-            Console.WriteLine($"[PvfIndex] 索引就绪: 物品 {itemNames.Count}, 任务 {(_questMeta != null ? _questMeta.Count : 0)}"
+            var setCount = _setsById.Count;
+            Console.WriteLine($"[PvfIndex] 索引就绪: 物品 {itemNames.Count}, 套装 {setCount}, 任务 {(_questMeta != null ? _questMeta.Count : 0)}"
                 + (failures > 0 ? $", 解析失败被跳过 {failures} 条" : ""));
         }
 

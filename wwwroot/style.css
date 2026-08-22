@@ -523,6 +523,23 @@ header h1::before {
   min-width: 0;
 }
 
+.give-equipment-set {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 14px;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.give-equipment-set input {
+  margin-top: 3px;
+}
+
+.give-equipment-set .hint {
+  flex: 1 1 auto;
+}
+
 .give-equipment-actions {
   justify-content: flex-end;
   margin-top: 18px;
@@ -1029,6 +1046,53 @@ td input.val-input {
 .item-preview-detail { color: #b0b0b0; }
 .item-preview-flavor { color: #8a8a8a; font-style: italic; }
 .item-preview-stats { color: #ffe27a; }
+
+.item-preview-set {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.item-preview-set-name {
+  color: #6bdc6b;
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.item-preview-set-pieces {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin-top: 6px;
+}
+
+.item-preview-set-piece {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #d8d8d8;
+  font-size: 11px;
+}
+
+.item-preview-set-icon {
+  width: 22px;
+  height: 22px;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+
+.item-preview-set-icon.missing { visibility: hidden; }
+
+.item-preview-set-bonus {
+  margin-top: 4px;
+  color: #6bdc6b;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.item-preview-set-count {
+  color: #ffe27a;
+}
 
 .pre-done { color: var(--success); }
 .pre-missing { color: var(--danger); }

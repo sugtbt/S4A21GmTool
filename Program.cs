@@ -183,7 +183,8 @@ namespace DfoGmTool
                     body.Count,
                     pvfIndex,
                     body.Direct,
-                    body.EquipmentOptions)));
+                    body.EquipmentOptions,
+                    body.SendSet)));
             app.MapPost("/api/characters/{id:int}/items/remove", (int id, ItemRequest body) =>
                 WithRuntime((gm, _) => gm.RemoveItem(id, body.TemplateId, body.Count)));
             app.MapPost("/api/characters/{id:int}/items/delete-at", (int id, DeleteAtRequest body) =>
@@ -311,6 +312,7 @@ namespace DfoGmTool
         public int TemplateId { get; set; }
         public int Count { get; set; }
         public bool Direct { get; set; }
+        public bool SendSet { get; set; }
         public Services.EquipmentGrantOptions EquipmentOptions { get; set; }
     }
 

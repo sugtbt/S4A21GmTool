@@ -14,6 +14,9 @@ namespace DfoGmTool.Services
             @"%[A-Za-z][A-Za-z0-9 ]*%",
             RegexOptions.Compiled);
         private static readonly Regex NewlineCodePattern = new Regex(@"#n", RegexOptions.Compiled);
+        private static readonly Regex ScriptMarkerPattern = new Regex(
+            @"\[([^\]/\r\n]+)\]",
+            RegexOptions.Compiled);
         private static readonly Dictionary<string, string> JobLabels = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
             { "all", "全职业" },
@@ -30,6 +33,7 @@ namespace DfoGmTool.Services
             { "at fighter", "女格斗" },
             { "at gunner", "女枪手" },
             { "at mage", "男法师" },
+            { "creator mage", "缔造者" },
         };
 
         public bool TryGetIcon(int itemId, out string iconPath, out int iconFrame, out string markPath, out int markFrame)
@@ -76,6 +80,7 @@ namespace DfoGmTool.Services
                 flavorText = entry.FlavorText,
                 usableJob = entry.UsableJob,
                 stats = entry.Stats ?? new List<string>(),
+                set = BuildSetPreview(entry, null),
                 templateExpiration = new
                 {
                     known = true,
@@ -105,13 +110,21 @@ namespace DfoGmTool.Services
             }
 
             entry.Explain = ReadScriptText(model.Root, text, "explain");
-            entry.BasicExplain = ReadScriptText(model.Root, text, "basic explain");
+            entry.BasicExplain = ReadScriptText(model.Root, text, "basic explain")
+                ?? ReadScriptText(model.Root, text, "parameter basic explain");
             entry.DetailExplain = ReadScriptText(model.Root, text, "detail explain");
             entry.FlavorText = ReadScriptText(model.Root, text, "flavor text");
             entry.UsableJob = ReadUsableJob(model.Root, text);
-            entry.Stats = model is EquipmentFile equipment
-                ? CollectEquipmentStats(equipment)
-                : CollectStackableStats(model as StackableItemFile);
+            entry.LinkedCardId = ReadLinkedCardId(model.Root, text);
+            entry.Stats = CollectScriptStats(model.Root, text);
+            if (string.Equals(entry.Kind, "stackable", StringComparison.Ordinal))
+                TrimStackableMetaStats(entry.Stats);
+        }
+
+        private static int ReadLinkedCardId(ScriptNode root, string content)
+        {
+            var node = root?.GetChild("monster card id");
+            return TryReadFirstInt(node, content, out var id) ? id : 0;
         }
 
         private static bool TryReadIcon(ScriptNode root, string content, string tag, out string path, out int frame)
@@ -206,72 +219,6 @@ namespace DfoGmTool.Services
             return labels.Count == 0 ? null : string.Join(" / ", labels);
         }
 
-        private static List<string> CollectEquipmentStats(EquipmentFile equipment)
-        {
-            var stats = new List<string>();
-            if (equipment == null)
-                return stats;
-
-            AddRangeStat(stats, "物理攻击力", equipment.PhysicalAttack, equipment.EquipmentPhysicalAttack);
-            AddRangeStat(stats, "魔法攻击力", equipment.MagicalAttack, equipment.EquipmentMagicalAttack);
-            AddRangeStat(stats, "物理防御力", equipment.PhysicalDefense, equipment.EquipmentPhysicalDefense);
-            AddRangeStat(stats, "魔法防御力", equipment.MagicalDefense, equipment.EquipmentMagicalDefense);
-            AddStat(stats, "HP MAX", equipment.HpMax);
-            AddStat(stats, "MP MAX", equipment.MpMax);
-            AddStat(stats, "攻击速度", equipment.AttackSpeed);
-            AddStat(stats, "施放速度", equipment.CastSpeed);
-            AddStat(stats, "移动速度", equipment.MoveSpeed);
-            AddStat(stats, "体力恢复", equipment.HpRegenSpeed);
-            AddStat(stats, "精神恢复", equipment.MpRegenSpeed);
-            AddStat(stats, "物理暴击", equipment.PhysicalCriticalHit);
-            AddStat(stats, "魔法暴击", equipment.MagicalCriticalHit);
-            AddStat(stats, "命中率", equipment.AttackSuccess);
-            AddStat(stats, "硬直", equipment.HitRecovery);
-            if (equipment.Durability > 0)
-                stats.Add("耐久度 " + equipment.Durability);
-            if (equipment.Weight > 0)
-                stats.Add("重量 " + equipment.Weight);
-            return stats;
-        }
-
-        private static List<string> CollectStackableStats(StackableItemFile stackable)
-        {
-            var stats = new List<string>();
-            if (stackable == null)
-                return stats;
-            if (stackable.StackLimit > 0)
-                stats.Add("堆叠上限 " + stackable.StackLimit);
-            if (stackable.Weight > 0)
-                stats.Add("重量 " + stackable.Weight);
-            if (stackable.CoolTime > 0)
-                stats.Add("冷却 " + stackable.CoolTime);
-            return stats;
-        }
-
-        private static void AddStat(List<string> stats, string label, int value)
-        {
-            if (value != 0)
-                stats.Add(label + " " + FormatSigned(value));
-        }
-
-        private static void AddRangeStat(List<string> stats, string label, int single, int[] range)
-        {
-            if (range != null && range.Length >= 2 && (range[0] != 0 || range[1] != 0))
-            {
-                stats.Add(range[0] == range[1]
-                    ? label + " " + FormatSigned(range[0])
-                    : label + " " + FormatSigned(range[0]) + " ~ " + FormatSigned(range[1]));
-                return;
-            }
-
-            AddStat(stats, label, single);
-        }
-
-        private static string FormatSigned(int value)
-        {
-            return value > 0 ? "+" + value.ToString(CultureInfo.InvariantCulture) : value.ToString(CultureInfo.InvariantCulture);
-        }
-
         private static string StripTicks(string value)
         {
             if (string.IsNullOrWhiteSpace(value))
@@ -280,6 +227,36 @@ namespace DfoGmTool.Services
             if (value.Length >= 2 && value[0] == '`' && value[value.Length - 1] == '`')
                 value = value.Substring(1, value.Length - 2);
             return value.Trim();
+        }
+
+        private static string RewriteScriptMarkers(string text)
+        {
+            if (string.IsNullOrEmpty(text))
+                return text;
+
+            var sockets = ReadEmblemSockets(text);
+            text = EmblemSocketPattern.Replace(text, string.Empty);
+            text = ScriptMarkerPattern.Replace(text, match =>
+            {
+                var tag = match.Groups[1].Value.Trim();
+                if (JobLabels.TryGetValue(tag, out var job))
+                    return job;
+                if (SlotLabels.TryGetValue(tag, out var slot))
+                    return slot;
+                var element = TranslateElement(tag);
+                if (!string.Equals(element, tag, StringComparison.OrdinalIgnoreCase) && !IsAsciiIdent(element))
+                    return element;
+                if (PreviewSkipTags.Contains(tag) || IsAsciiIdent(tag))
+                    return string.Empty;
+                return match.Value;
+            });
+            text = text.Replace("`", "");
+            if (sockets.Count > 0 && text.IndexOf("徽章孔", StringComparison.Ordinal) < 0)
+                text = text.Trim() + (text.Trim().Length > 0 ? " " : "") + "徽章孔 " + string.Join(" / ", sockets);
+
+            while (text.IndexOf("  ", StringComparison.Ordinal) >= 0)
+                text = text.Replace("  ", " ");
+            return text.Trim();
         }
 
         private static string SanitizeScriptText(string value)
@@ -291,6 +268,7 @@ namespace DfoGmTool.Services
             text = NewlineCodePattern.Replace(text, "\n");
             text = FormatPlaceholderPattern.Replace(text, string.Empty);
             text = text.Replace("\u0001", "%");
+            text = RewriteScriptMarkers(text);
 
             var lines = text.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n');
             var builder = new StringBuilder();
