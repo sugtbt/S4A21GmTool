@@ -4,6 +4,7 @@
 
 if (window.DfoTheme) window.DfoTheme.bind();
 bindRuntimeEnvironment();
+initItemPreview();
 
 $('#give-equipment-form').onsubmit = (event) => {
   event.preventDefault();

@@ -20,7 +20,7 @@ function mailboxAttachmentLabel(mail) {
   if (!mail.attachments || mail.attachments.length === 0) return '—';
   return mail.attachments.map((item) => {
     const name = item.name || ('#' + item.itemId);
-    return `${escapeHtml(name)} ×${item.count} (${mailboxClaimLabel(item.claimedFlag)})`;
+    return `${itemPreviewName(item.itemId, name, item.rarity)} ×${item.count} (${mailboxClaimLabel(item.claimedFlag)})`;
   }).join('<br>');
 }
 

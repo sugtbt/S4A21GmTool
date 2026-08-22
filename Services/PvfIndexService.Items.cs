@@ -30,6 +30,16 @@ namespace DfoGmTool.Services
             public int UsablePeriodDays;
             public bool DailyDeleteItem;
             public bool HasInvalidExpirationDefinition;
+            public string IconPath;      // [icon] 路径，无则没有图标
+            public int IconFrame;
+            public string IconMarkPath;  // [icon mark]
+            public int IconMarkFrame;
+            public string Explain;
+            public string BasicExplain;
+            public string DetailExplain;
+            public string FlavorText;
+            public string UsableJob;
+            public List<string> Stats;
         }
 
         public readonly struct ItemExpirationDefinition
@@ -410,6 +420,7 @@ namespace DfoGmTool.Services
                             DailyDeleteItem = expiration.DailyDeleteItem,
                             HasInvalidExpirationDefinition = expiration.HasInvalidDefinition,
                         };
+                        FillPreview(results[i], model, text);
                     }
                     else
                     {
@@ -431,6 +442,7 @@ namespace DfoGmTool.Services
                             DailyDeleteItem = expiration.DailyDeleteItem,
                             HasInvalidExpirationDefinition = expiration.HasInvalidDefinition,
                         };
+                        FillPreview(results[i], model, text);
                     }
                 }
                 catch

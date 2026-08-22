@@ -155,7 +155,7 @@ function renderAccountPanel(accountId, detail) {
   cubeBody.innerHTML = '';
   for (const cube of detail.cubes) {
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${cube.itemId}</td><td>${escapeHtml(cube.name || '')}</td>
+    tr.innerHTML = `<td>${cube.itemId}</td><td>${itemPreviewName(cube.itemId, cube.name, cube.rarity)}</td>
       <td>${cube.count.toLocaleString()}</td>
       <td><input type="number" min="0" class="val-input" value="${cube.count}"></td><td><button class="mini">覆写</button></td>`;
     tr.querySelector('button').onclick = async () => {
@@ -177,7 +177,7 @@ function renderAccountPanel(accountId, detail) {
   soulBody.innerHTML = '';
   for (const soul of (detail.souls || [])) {
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${soul.itemId}</td><td>${escapeHtml(soul.name || '')}</td>
+    tr.innerHTML = `<td>${soul.itemId}</td><td>${itemPreviewName(soul.itemId, soul.name, soul.rarity)}</td>
       <td>${soul.count.toLocaleString()}</td>
       <td><input type="number" min="0" class="val-input" value="${soul.count}"></td><td><button class="mini">覆写</button></td>`;
     tr.querySelector('button').onclick = async () => {
@@ -200,7 +200,7 @@ function renderAccountPanel(accountId, detail) {
   for (const item of detail.cargo) {
     const tr = document.createElement('tr');
     tr.innerHTML = `<td>${item.slot}</td><td>${item.templateId}</td>
-      <td>${escapeHtml(item.name || '')}</td><td>${item.count}</td><td>${item.durability}</td>
+      <td>${itemPreviewName(item.templateId, item.name, item.rarity)}</td><td>${item.count}</td><td>${item.durability}</td>
       <td><button class="mini danger">删除</button></td>`;
     tr.querySelector('button').onclick = async () => {
       try {

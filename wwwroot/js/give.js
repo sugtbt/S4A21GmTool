@@ -173,7 +173,7 @@ async function searchItems(page) {
       const tr = document.createElement('tr');
       const isEquipment = r.kind === 'equipment';
       tr.innerHTML = `<td>${r.itemId}</td>
-        <td class="rarity-${r.rarity >= 0 && r.rarity <= 6 ? r.rarity : 0}">${escapeHtml(r.name)}</td>
+        <td>${itemPreviewName(r.itemId, r.name, r.rarity)}</td>
         <td>${r.minLevel || ''}</td>
         <td>${r.special ? (SPECIAL_LABELS[r.special] || escapeHtml(r.special)) : (RARITY_LABELS[r.rarity] || r.rarity)}</td>
         <td title="${escapeHtml(r.tag || '')}">${escapeHtml(tagLabel(r.tag))}</td>
@@ -254,7 +254,7 @@ function openGiveEquipmentModal(item, opener) {
     submitting: false,
   };
 
-  $('#give-equipment-name').textContent = item.name || `物品 ${item.itemId}`;
+  $('#give-equipment-name').innerHTML = itemPreviewName(item.itemId, item.name || `物品 ${item.itemId}`, item.rarity);
   $('#give-equipment-meta').textContent = `ID ${item.itemId} · ${tagLabel(item.tag)}`;
   $('#give-equipment-upgrade-fields').classList.toggle('hidden', !canUpgrade && !canAmplify);
   $('#give-equipment-forging-field').classList.toggle('hidden', !isWeapon);

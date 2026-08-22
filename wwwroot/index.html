@@ -61,10 +61,24 @@
         <button id="btn-close-runtime-source" class="mini" type="button">关闭</button>
       </div>
       <label class="runtime-source-field">数据库
-        <input id="runtime-database-path" type="text" autocomplete="off" spellcheck="false" placeholder="inventory.db 完整路径">
+        <div class="runtime-source-path">
+          <input id="runtime-database-path" type="text" autocomplete="off" spellcheck="false" placeholder="inventory.db 完整路径">
+          <button id="btn-browse-database" class="mini" type="button">浏览…</button>
+        </div>
       </label>
       <label class="runtime-source-field">PVF
-        <input id="runtime-pvf-path" type="text" autocomplete="off" spellcheck="false" placeholder="Script.pvf 完整路径">
+        <div class="runtime-source-path">
+          <input id="runtime-pvf-path" type="text" autocomplete="off" spellcheck="false" placeholder="Script.pvf 完整路径">
+          <button id="btn-browse-pvf" class="mini" type="button">浏览…</button>
+        </div>
+      </label>
+      <label class="runtime-source-field">ImagePacks2
+        <div class="runtime-source-path">
+          <input id="runtime-imagepacks-path" type="text" autocomplete="off" spellcheck="false" placeholder="可选，客户端 ImagePacks2 目录">
+          <button id="btn-browse-imagepacks" class="mini" type="button">浏览…</button>
+          <button id="btn-clear-imagepacks" class="mini" type="button">清除</button>
+        </div>
+        <span class="hint">不选则物品预览没有图标</span>
       </label>
       <div class="runtime-source-actions">
         <button id="btn-load-runtime-source" type="submit">加载</button>
@@ -478,7 +492,7 @@
   </section>
 
   <div id="toast" class="toast hidden"></div>
-  <!-- 顺序即依赖: core 提供通用助手, bindings 必须最后(全部事件绑定与启动调用) -->
+  <!-- 顺序即依赖: core 提供通用助手, preview 在业务脚本之后, bindings 必须最后 -->
   <script src="js/core.js"></script>
   <script src="js/sidebar.js"></script>
   <script src="js/environment.js"></script>
@@ -487,6 +501,7 @@
   <script src="js/mailbox.js"></script>
   <script src="js/character.js"></script>
   <script src="js/quests.js"></script>
+  <script src="js/preview.js"></script>
   <script src="js/bindings.js"></script>
 </body>
 </html>

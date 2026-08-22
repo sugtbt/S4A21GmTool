@@ -51,6 +51,7 @@ S4A21 服务端的 Web GM 控制台。由 A12 `DfoGmTool` 按当前 A21 服务�
 - 装备通过邮件发送时可选择最上级或随机品级，以及普通强化、未净化或已净化增幅；
   增幅属性支持体力/精神/力量/智力，武器可额外设置锻造等级；一封邮件最多发送 10 件装备（每件占一个附件格）
 - 结果每页 10 条分页，名称按品质着色
+- 发放、背包、邮箱附件、晶块/灵魂/金库的物品名旁显示图标；鼠标悬停弹出说明、属性和期限预览（图标来自数据源里可选的 A21 客户端 `ImagePacks2`）
 
 **邮箱**
 - 查看收件箱 / 保管邮件（含已过期），支持单封删除和一键清空
@@ -76,9 +77,10 @@ S4A21 服务端的 Web GM 控制台。由 A12 `DfoGmTool` 按当前 A21 服务�
 - 这些服务端源码以**拷贝件**形式随仓库入库：
   - `ServerCore/` — 服务端业务源码（按 GM 实际用到的调用面裁剪，裁剪过的文件在文件头注明）
   - `PvfLib/` — PVF 解析库（程序集与命名空间均为 GmPvfLib）
+  - `ImagePack/` — 只读客户端 ImagePacks2（NPK/IMG），与 PvfLib 分离；未选择时预览只有文字
   - 拷贝件的命名空间已统一为工具自己的（`DfoGmTool.ServerCore.*`），除此之外保留逻辑与服务端一致
 - 前端为无依赖的原生 HTML/JS/CSS（`wwwroot/`），脚本按域拆在 `wwwroot/js/` 下，
-  按 core → sidebar → environment → give → inventory → mailbox → character → quests → bindings 顺序加载；
+  按 core → sidebar → environment → give → inventory → mailbox → character → quests → preview → bindings 顺序加载；
   **全部事件绑定与启动调用只放 `bindings.js`**（最后加载，防绑定链断裂）。
   静态文件禁缓存，改前端刷新即生效。
 
@@ -95,6 +97,8 @@ dotnet run
 2. 环境变量 `DFO_GM_SERVER_BIN`
 3. 从工作目录/程序目录逐级向上，找同级的 `servers4a21\Server\DfoServer\bin\Debug`
 
+物品图标使用数据源面板里可选的 A21 客户端 `ImagePacks2` 目录（本地模式可用系统文件框选择数据库、PVF 和该目录）。不选则预览仍有文字，只是没有图标。远程模式把路径写在 `config.ini` 的 `imagepacks_path`，同样可选。
+
 `item_schema.sql` 优先用服务端目录里的，缺失时回退工具自带的 A21 schema 拷贝。
 
 ## 发布
@@ -106,10 +110,10 @@ dotnet publish DfoGmTool.csproj -c Release -r win-x64 --self-contained true -o b
 产物自包含（目标机器无需安装 .NET），拷走整个目录即可。
 目标机器上用 `--server-bin` 或环境变量指向该机的 **A21** 服务端数据目录。
 
-Linux 版把 `-r win-x64` 换成 `-r linux-x64` 即可（代码无 P/Invoke、无 Windows 专属编码，
-SQLite 原生库随发布件自带）。注意两点：可执行文件需要 `chmod +x DfoGmTool`；
-Linux 文件系统区分大小写，服务端数据目录必须是 `Data/inventory.db`、`Data/Pvf/Script.pvf`
-的准确大小写。
+Linux 版把 `-r win-x64` 换成 `-r linux-x64` 即可（SQLite 原生库随发布件自带）。
+本机选文件弹窗仅 Windows；Linux 请在数据源面板直接填写路径。注意两点：可执行文件需要
+`chmod +x DfoGmTool`；Linux 文件系统区分大小写，服务端数据目录必须是
+`Data/inventory.db`、`Data/Pvf/Script.pvf` 的准确大小写。
 
 ## 注意
 
