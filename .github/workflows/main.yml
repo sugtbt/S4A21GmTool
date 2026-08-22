@@ -65,11 +65,11 @@ jobs:
 
       - name: Restore dependencies
         if: env.HAS_UPDATE == 'true'
-        run: dotnet restore
+        run: dotnet restore DfoGmTool.csproj
 
       - name: Build Project
         if: env.HAS_UPDATE == 'true'
-        run: dotnet build --no-restore --configuration Release
+        run: dotnet build --no-restore --configuration Release DfoGmTool.csproj
 
       - name: Publish Project (Optimized)
         if: env.HAS_UPDATE == 'true'
