@@ -1,6 +1,3 @@
-using Microsoft.Data.Sqlite;
-using System;
-
 namespace DfoGmTool.ServerCore.Game.Inventory
 {
     public sealed class SpecialRewardOutcome
@@ -16,49 +13,30 @@ namespace DfoGmTool.ServerCore.Game.Inventory
     {
         Premium,
         ReviveCoin,
+        HappyTokenCera,
         EpicPiece,
     }
 
     internal static class SpecialRewardRouter
     {
-        internal static bool TryRoute(
-            SqliteConnection connection,
-            SqliteTransaction transaction,
-            int characterId,
-            int accountId,
+        internal const int HappyTokenCeraVoucherItemId = 2681917;
+
+        internal static bool TryResolveAccountCurrencyReward(
             int itemTemplateId,
             int count,
             out SpecialRewardOutcome outcome)
         {
             outcome = null;
+            if (itemTemplateId != HappyTokenCeraVoucherItemId || count <= 0)
+                return false;
 
-            if (Premium.PremiumService.IsContractItem(itemTemplateId))
+            outcome = new SpecialRewardOutcome
             {
-                outcome = new SpecialRewardOutcome
-                {
-                    Kind = SpecialRewardKind.Premium,
-                    ItemTemplateId = itemTemplateId,
-                    Count = Math.Max(1, count),
-                };
-                return true;
-            }
-
-            if (ReviveCoin.ReviveCoinService.IsReviveCoinReward(itemTemplateId))
-            {
-                var effectiveCount = Math.Max(1, count);
-                var newTotal = ReviveCoin.ReviveCoinService.GrantToWallet(connection, transaction, characterId, effectiveCount);
-                outcome = new SpecialRewardOutcome
-                {
-                    Kind = SpecialRewardKind.ReviveCoin,
-                    ItemTemplateId = itemTemplateId,
-                    Count = effectiveCount,
-                    WalletSlot = ReviveCoin.ReviveCoinService.WalletSlot,
-                    WalletNewTotal = newTotal,
-                };
-                return true;
-            }
-
-            return false;
+                Kind = SpecialRewardKind.HappyTokenCera,
+                ItemTemplateId = itemTemplateId,
+                Count = count,
+            };
+            return true;
         }
     }
 }
