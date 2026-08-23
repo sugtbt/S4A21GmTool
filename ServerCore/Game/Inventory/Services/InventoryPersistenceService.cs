@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Threading;
 using DfoGmTool.ServerCore.Game.CharacterData;
 using DfoGmTool.ServerCore.Game.Currency;
 using DfoGmTool.ServerCore.Game.TitleBook;
@@ -10,7 +9,7 @@ using Microsoft.Data.Sqlite;
 
 namespace DfoGmTool.ServerCore.Game.Inventory
 {
-    // GM瘦身拷贝: 删除 RegisterClock/SaveAllDirty(GM 不起后台定时保存, 无调用方)及其字段。
+    // 无后台定时保存。
     internal static class InventoryPersistenceService
     {
         public static bool SaveDirty(InventoryLease lease)
@@ -76,6 +75,8 @@ namespace DfoGmTool.ServerCore.Game.Inventory
             SaveDirtyAchievements(connection, transaction, inventory);
             SaveDirtyCollectBox(connection, transaction, inventory);
             SaveDirtyEpicPieceBook(connection, transaction, inventory);
+            SaveDirtyItemStates(connection, transaction, inventory);
+            SavePendingAccountCurrencyGrants(connection, transaction, inventory);
             SaveDirtyMainVirtualCounts(connection, transaction, inventory);
             SaveDirtyContainerStates(connection, transaction, inventory);
             return true;
@@ -198,9 +199,12 @@ namespace DfoGmTool.ServerCore.Game.Inventory
 
         private static bool HasDirtyData(InventoryService inventory)
         {
+            if (inventory.PendingHappyTokenCeraGrant > 0)
+                return true;
             if (inventory.DirtyMainVirtualCountSlots.Count > 0 || inventory.DirtyListParams.Count > 0)
                 return true;
             if (inventory.AvatarDetails.DirtyDetailUids.Count > 0
+                || inventory.AvatarDetails.DeletedDetailUids.Count > 0
                 || inventory.CreatureDetails.DirtyDetailUids.Count > 0)
                 return true;
             if (inventory.Cargo.DirtySlots.Count > 0
@@ -214,6 +218,8 @@ namespace DfoGmTool.ServerCore.Game.Inventory
             if (inventory.CollectBox.HasDirtySlots)
                 return true;
             if (inventory.EpicPieces.IsDirty)
+                return true;
+            if (inventory.ItemStates.IsDirty)
                 return true;
 
             foreach (var _ in inventory.DirtyListTypes)
@@ -355,11 +361,44 @@ namespace DfoGmTool.ServerCore.Game.Inventory
                 core);
         }
 
+        private static void SavePendingAccountCurrencyGrants(
+            SqliteConnection connection,
+            SqliteTransaction transaction,
+            InventoryService inventory)
+        {
+            if (inventory.PendingHappyTokenCeraGrant <= 0)
+                return;
+
+            CurrencyService.GrantHappyTokenCera(
+                connection,
+                transaction,
+                inventory.CharacterId,
+                inventory.PendingHappyTokenCeraGrant);
+        }
+
+        private static void SaveDirtyItemStates(
+            SqliteConnection connection,
+            SqliteTransaction transaction,
+            InventoryService inventory)
+        {
+            if (!inventory.ItemStates.IsDirty)
+                return;
+
+            CharacterItemStateRepository.SaveAll(
+                connection,
+                transaction,
+                inventory.CharacterId,
+                inventory.ItemStates);
+        }
+
         private static void SaveDirtyAvatarDetails(
             SqliteConnection connection,
             SqliteTransaction transaction,
             InventoryService inventory)
         {
+            foreach (var avatarUid in inventory.AvatarDetails.DeletedDetailUids)
+                AvatarDetailRepository.Delete(connection, transaction, avatarUid);
+
             foreach (var detail in inventory.AvatarDetails.GetDirtyDetails())
                 AvatarDetailRepository.Upsert(connection, transaction, detail);
         }

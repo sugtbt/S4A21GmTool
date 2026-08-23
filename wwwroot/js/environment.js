@@ -17,15 +17,20 @@ function readStoredRuntimeSource() {
 
     const databasePath = value.databasePath.trim();
     const pvfPath = value.pvfPath.trim();
-    return databasePath && pvfPath ? { databasePath, pvfPath } : null;
+    const imagePacksPath = typeof value.imagePacksPath === 'string' ? value.imagePacksPath.trim() : '';
+    return databasePath && pvfPath ? { databasePath, pvfPath, imagePacksPath } : null;
   } catch (_) {
     return null;
   }
 }
 
-function saveRuntimeSource(databasePath, pvfPath) {
+function saveRuntimeSource(databasePath, pvfPath, imagePacksPath) {
   try {
-    localStorage.setItem(RUNTIME_SOURCE_STORAGE_KEY, JSON.stringify({ databasePath, pvfPath }));
+    localStorage.setItem(RUNTIME_SOURCE_STORAGE_KEY, JSON.stringify({
+      databasePath,
+      pvfPath,
+      imagePacksPath: imagePacksPath || '',
+    }));
   } catch (_) {
     // Source selection still works when browser storage is unavailable.
   }
@@ -59,8 +64,13 @@ function updateRuntimeSourceInputs(status, force) {
   if (!status) return;
   const database = $('#runtime-database-path');
   const pvf = $('#runtime-pvf-path');
+  const imagePacks = $('#runtime-imagepacks-path');
   if (force || !database.value) database.value = status.database || '';
   if (force || !pvf.value) pvf.value = status.pvf || '';
+  if (force || !imagePacks.value) {
+    const stored = !status.imagePacks ? readStoredRuntimeSource() : null;
+    imagePacks.value = status.imagePacks || (stored && stored.imagePacksPath) || '';
+  }
 }
 
 function showLoginPanel() {
@@ -192,6 +202,7 @@ async function configureRuntimeEnvironment() {
 
   const databasePath = $('#runtime-database-path').value.trim();
   const pvfPath = $('#runtime-pvf-path').value.trim();
+  const imagePacksPath = $('#runtime-imagepacks-path').value.trim();
   if (!databasePath || !pvfPath) {
     setRuntimeSourceState('请填写数据库和 PVF 路径', true);
     return;
@@ -202,23 +213,65 @@ async function configureRuntimeEnvironment() {
   $('#btn-load-runtime-source').disabled = true;
   $('#btn-close-runtime-source').classList.add('hidden');
   try {
-    const result = await post('/api/environment', { databasePath, pvfPath });
-    saveRuntimeSource(result.status.database || databasePath, result.status.pvf || pvfPath);
+    const result = await post('/api/environment', { databasePath, pvfPath, imagePacksPath });
+    const status = result.status || {};
+    saveRuntimeSource(status.database || databasePath, status.pvf || pvfPath, status.imagePacks || imagePacksPath);
+    updateRuntimeSourceInputs({
+      database: status.database || databasePath,
+      pvf: status.pvf || pvfPath,
+      imagePacks: status.imagePacks || imagePacksPath,
+    }, true);
+
+    if (result.sourceChanged === false && runtimeReady) {
+      applyRuntimeStatus({
+        ...status,
+        authenticationRequired: false,
+        authenticated: true,
+        canChangeSource: true,
+      });
+      if (result.imagePacksChanged && typeof refreshItemIcons === 'function')
+        refreshItemIcons();
+      setRuntimeSourceState(status.hasImagePacks
+        ? (result.imagePacksChanged ? '图标目录已更新' : '数据源未变化')
+        : (imagePacksPath ? '已加载；ImagePacks2 无效，没有图标预览' : '已加载；未选择 ImagePacks2，没有图标预览'), false);
+      return;
+    }
+
     runtimeReady = false;
     runtimeSourceEpoch++;
     resetRuntimeWorkspace();
     applyRuntimeStatus({
-      ...result.status,
+      ...status,
       authenticationRequired: false,
       authenticated: true,
       canChangeSource: true,
     });
+    if (status.ready && !status.hasImagePacks)
+      setRuntimeSourceState(imagePacksPath ? 'ImagePacks2 无效，物品预览没有图标' : '未选择 ImagePacks2，物品预览没有图标', false);
   } catch (e) {
     setRuntimeSourceState(e.message, true);
   } finally {
     runtimeConfiguring = false;
     $('#btn-load-runtime-source').disabled = false;
     if (runtimeReady) $('#btn-close-runtime-source').classList.remove('hidden');
+  }
+}
+
+async function browseRuntimePath(kind, inputId) {
+  if (runtimeConfiguring || !canChangeRuntimeSource()) return;
+
+  const input = $(inputId);
+  try {
+    setRuntimeSourceState('正在打开系统选择框…', false);
+    const result = await post('/api/environment/browse', { kind, currentPath: input.value.trim() });
+    if (result.cancelled || !result.path) {
+      setRuntimeSourceState('', false);
+      return;
+    }
+    input.value = result.path;
+    setRuntimeSourceState('', false);
+  } catch (e) {
+    setRuntimeSourceState(e.message, true);
   }
 }
 
@@ -267,6 +320,13 @@ function bindRuntimeEnvironment() {
   $('#btn-close-runtime-source').onclick = () => {
     if (runtimeReady && !runtimeConfiguring) hideRuntimeSourcePanel();
   };
+  $('#btn-browse-database').onclick = () => browseRuntimePath('database', '#runtime-database-path');
+  $('#btn-browse-pvf').onclick = () => browseRuntimePath('pvf', '#runtime-pvf-path');
+  $('#btn-browse-imagepacks').onclick = () => browseRuntimePath('imagepacks', '#runtime-imagepacks-path');
+  $('#btn-clear-imagepacks').onclick = () => {
+    $('#runtime-imagepacks-path').value = '';
+    setRuntimeSourceState('', false);
+  };
   $('#runtime-source-form').onsubmit = (event) => {
     event.preventDefault();
     configureRuntimeEnvironment();
@@ -279,12 +339,20 @@ function bindRuntimeEnvironment() {
 
 async function initializeRuntimeEnvironment() {
   const status = await refreshRuntimeEnvironment();
-  if (!status || status.authenticationRequired || status.configured || !status.canChangeSource) return;
+  if (!status || status.authenticationRequired || !status.canChangeSource) return;
 
   const source = readStoredRuntimeSource();
-  if (!source) return;
+  if (!status.configured) {
+    if (!source) return;
+    $('#runtime-database-path').value = source.databasePath;
+    $('#runtime-pvf-path').value = source.pvfPath;
+    $('#runtime-imagepacks-path').value = source.imagePacksPath || '';
+    return configureRuntimeEnvironment();
+  }
 
-  $('#runtime-database-path').value = source.databasePath;
-  $('#runtime-pvf-path').value = source.pvfPath;
+  if (status.hasImagePacks || !source || !source.imagePacksPath) return;
+  $('#runtime-database-path').value = status.database || source.databasePath;
+  $('#runtime-pvf-path').value = status.pvf || source.pvfPath;
+  $('#runtime-imagepacks-path').value = source.imagePacksPath;
   return configureRuntimeEnvironment();
 }

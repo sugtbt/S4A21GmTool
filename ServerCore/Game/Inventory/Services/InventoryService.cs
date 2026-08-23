@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using DfoGmTool.ServerCore.Game.CharacterData;
 using DfoGmTool.ServerCore.Game.Currency;
 using DfoGmTool.ServerCore.Game.ItemUpgrade;
 using DfoGmTool.ServerCore.Game.ReviveCoin;
@@ -64,14 +65,21 @@ namespace DfoGmTool.ServerCore.Game.Inventory
         private readonly Dictionary<InventoryListType, ushort> _listParams =
             new Dictionary<InventoryListType, ushort>();
         private readonly HashSet<InventoryListType> _dirtyListParams = new HashSet<InventoryListType>();
+        private int _pendingHappyTokenCeraGrant;
 
         public InventoryService(int characterId, int accountId)
+            : this(characterId, accountId, database: null)
+        {
+        }
+
+        internal InventoryService(int characterId, int accountId, object database)
         {
             if (characterId <= 0)
                 throw new ArgumentOutOfRangeException(nameof(characterId), "在线背包需要有效的角色 ID。");
 
             CharacterId = characterId;
             AccountId = accountId;
+            Database = database;
             Cargo = new CargoModel(characterId, accountId);
             AccountCargo = new AccountCargoModel(accountId);
             CreatureDetails.BindCharacter(characterId);
@@ -83,6 +91,8 @@ namespace DfoGmTool.ServerCore.Game.Inventory
         public int CharacterId { get; }
 
         public int AccountId { get; }
+
+        internal object Database { get; }
 
         public CargoModel Cargo { get; }
 
@@ -104,7 +114,15 @@ namespace DfoGmTool.ServerCore.Game.Inventory
 
         public EpicPieceBookModel EpicPieces { get; } = new EpicPieceBookModel();
 
+        public InventoryItemStateBook ItemStates { get; } = new InventoryItemStateBook();
+
         public IReadOnlyCollection<InventoryListType> DirtyListTypes => _dirtySlots.Keys;
+
+        public int PendingHappyTokenCeraGrant => _pendingHappyTokenCeraGrant;
+
+        public byte AuraSkinFlag { get; private set; }
+
+        public bool IsAuraSkinSlotOpened => AuraSkinFlag != 0;
 
         public IReadOnlyCollection<short> DirtyMainVirtualCountSlots => _dirtyMainVirtualSlots;
 
@@ -125,6 +143,8 @@ namespace DfoGmTool.ServerCore.Game.Inventory
             inventory.LoadTitleBook(connection);
             inventory.Achievements.LoadForCharacter(connection, characterId);
             CollectBoxProgressRepository.LoadModel(connection, null, characterId, inventory.CollectBox);
+            inventory.LoadAuraSkinFlag(connection);
+            CharacterItemStateRepository.LoadInto(connection, characterId, inventory.ItemStates);
 
             foreach (var item in InventoryItemRepository.LoadCharacterItems(connection, characterId))
                 inventory.AttachItem(item);
@@ -496,11 +516,30 @@ namespace DfoGmTool.ServerCore.Game.Inventory
             return new List<short>(slots);
         }
 
+        public bool TryQueueHappyTokenCeraGrant(int count)
+        {
+            if (count <= 0)
+                return false;
+
+            var updated = (long)_pendingHappyTokenCeraGrant + count;
+            if (updated > int.MaxValue)
+                return false;
+
+            _pendingHappyTokenCeraGrant = (int)updated;
+            return true;
+        }
+
+        internal void RestorePendingHappyTokenCeraGrant(int count)
+        {
+            _pendingHappyTokenCeraGrant = Math.Max(0, count);
+        }
+
         public void ClearDirtyState()
         {
             _dirtySlots.Clear();
             _dirtyMainVirtualSlots.Clear();
             _dirtyListParams.Clear();
+            _pendingHappyTokenCeraGrant = 0;
             AvatarDetails.ClearDirtyState();
             CreatureDetails.ClearDirtyState();
             Cargo.ClearDirtyState();
@@ -509,6 +548,7 @@ namespace DfoGmTool.ServerCore.Game.Inventory
             Achievements.ClearDirtyState();
             CollectBox.ClearDirtyState();
             EpicPieces.ClearDirtyState();
+            ItemStates.ClearDirtyState();
         }
 
         public static bool IsVirtualMainSlot(short slotIndex)
@@ -565,6 +605,24 @@ namespace DfoGmTool.ServerCore.Game.Inventory
             var titleBook = CharacterTitleBookRepository.LoadModel(connection, CharacterId);
             foreach (var item in titleBook.GetItems())
                 TitleBook.AttachItem(item.Key.Category, item.Key.SlotIndex, item.Value);
+        }
+
+        public void SetAuraSkinFlag(byte auraSkinFlag)
+        {
+            AuraSkinFlag = auraSkinFlag != 0 ? (byte)1 : (byte)0;
+        }
+
+        private void LoadAuraSkinFlag(SqliteConnection connection)
+        {
+            using (var command = connection.CreateCommand())
+            {
+                command.CommandText = "SELECT aura_skin_flag FROM characters WHERE character_id=@cid;";
+                command.Parameters.AddWithValue("@cid", CharacterId);
+                var value = command.ExecuteScalar();
+                AuraSkinFlag = value == null || value == DBNull.Value
+                    ? (byte)0
+                    : (Convert.ToInt32(value) != 0 ? (byte)1 : (byte)0);
+            }
         }
 
         private void LoadNameTagState(SqliteConnection connection)

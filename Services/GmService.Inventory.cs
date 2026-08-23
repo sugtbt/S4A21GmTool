@@ -272,8 +272,7 @@ namespace DfoGmTool.Services
             return container;
         }
 
-        // 走服务端 DELETE_ITEM 同款入口(InventoryDeleteService.TryDeleteForClient):
-        // 排列锁清理/整删部分删的语义都由服务端代码处理
+        // 整槽删除走 TryRemoveSlot（含时装/未知物品）；部分数量仍走客户端删除入口。
         public object DeleteItemAt(int characterId, int listType, int slot, int count)
         {
             int accountId;
@@ -292,9 +291,12 @@ namespace DfoGmTool.Services
                 if (inventory == null)
                     return Error("背包加载失败");
 
-                InventoryMutationResult result;
-                if (!InventoryDeleteService.TryDeleteForClient(
-                        inventory, list, (short)slot, count, out result))
+                InventoryMutationResult result = null;
+                var removed = count <= 0
+                    ? InventoryDeleteService.TryRemoveSlot(inventory, list, (short)slot, out _)
+                    : InventoryDeleteService.TryDeleteForClient(
+                        inventory, list, (short)slot, count, out result);
+                if (!removed)
                     return Error("删除失败(槽位为空或该列表不支持删除)");
 
                 if (!GmInventoryStore.Save(conn, characterId, inventory))
@@ -338,9 +340,8 @@ namespace DfoGmTool.Services
                         continue;
                     }
 
-                    InventoryMutationResult result;
-                    if (InventoryDeleteService.TryDeleteForClient(
-                            inventory, list, (short)entry.Slot, 0, out result))
+                    if (InventoryDeleteService.TryRemoveSlot(
+                            inventory, list, (short)entry.Slot, out _))
                         deleted++;
                     else
                         failed.Add(new { entry.ListType, entry.Slot, reason = "删除失败" });
@@ -387,7 +388,8 @@ namespace DfoGmTool.Services
             int count,
             PvfIndexService pvfIndex,
             bool direct = false,
-            EquipmentGrantOptions equipmentOptions = null)
+            EquipmentGrantOptions equipmentOptions = null,
+            bool sendSet = false)
         {
             if (itemTemplateId <= 0)
                 return Error("itemTemplateId 无效");
@@ -407,6 +409,15 @@ namespace DfoGmTool.Services
                 pvfIndex.ResolveItemKind(itemTemplateId),
                 "equipment",
                 StringComparison.Ordinal);
+            if (sendSet)
+            {
+                if (direct)
+                    return Error("套装发放只支持邮件");
+                if (!isEquipment)
+                    return Error("只有装备和装扮可以按套装发放");
+                return GiveItemSetViaMail(characterId, accountId, itemTemplateId, name, pvfIndex, equipmentOptions);
+            }
+
             EquipmentMailConfiguration equipment = null;
             if (isEquipment)
             {
@@ -481,6 +492,146 @@ namespace DfoGmTool.Services
             }
 
             return GiveItemViaMail(characterId, accountId, itemTemplateId, count, name, equipment);
+        }
+
+        private object GiveItemSetViaMail(
+            int characterId,
+            int accountId,
+            int itemTemplateId,
+            string seedName,
+            PvfIndexService pvfIndex,
+            EquipmentGrantOptions equipmentOptions)
+        {
+            string receiverName = null;
+            int receiverLevel = 0;
+            int receiverJob = 0;
+            using (var conn = new SqliteConnection(_config.ConnectionString))
+            {
+                conn.Open();
+                using (var cmd = conn.CreateCommand())
+                {
+                    cmd.CommandText = "SELECT name, level, job FROM characters WHERE character_id = @cid AND delete_flag = 0;";
+                    cmd.Parameters.AddWithValue("@cid", characterId);
+                    using (var reader = cmd.ExecuteReader())
+                    {
+                        if (!reader.Read())
+                            return Error("角色不存在或已删除: " + characterId);
+                        receiverName = reader.GetString(0);
+                        receiverLevel = reader.GetInt32(1);
+                        receiverJob = reader.GetInt32(2);
+                    }
+                }
+            }
+
+            var jobLabel = pvfIndex.ResolveJobBaseName(receiverJob);
+            if (!pvfIndex.TryResolveSendableSet(itemTemplateId, jobLabel, out var memberIds, out var setName, out var setError))
+                return Error(setError);
+
+            var attachments = new List<MailboxSendAttachmentRequest>(memberIds.Count);
+            foreach (var memberId in memberIds)
+            {
+                if (!TryResolveSetPieceMailConfiguration(memberId, equipmentOptions, out var equipment, out var equipmentError))
+                    return Error((pvfIndex.ResolveItemName(memberId) ?? ("物品 " + memberId)) + ": " + equipmentError);
+                if (!TryCreateMailAttachments(memberId, 1, equipment, out var pieceAttachments, out var attachmentError))
+                    return Error(attachmentError);
+                attachments.AddRange(pieceAttachments);
+            }
+
+            var mailCount = (attachments.Count + MailAttachmentLimit - 1) / MailAttachmentLimit;
+            if (mailCount > 2)
+                return Error("套装部件超过两封邮件上限");
+
+            var messageIds = new List<long>(mailCount);
+            var displayName = string.IsNullOrWhiteSpace(setName) ? seedName : setName;
+            for (var offset = 0; offset < attachments.Count; offset += MailAttachmentLimit)
+            {
+                var chunk = attachments.Skip(offset).Take(MailAttachmentLimit).ToList();
+                var part = (offset / MailAttachmentLimit) + 1;
+                var text = mailCount == 1
+                    ? "GM 发放套装：" + displayName
+                    : "GM 发放套装：" + displayName + "（" + part + "/" + mailCount + "）";
+                var request = new MailboxSendRequest
+                {
+                    SenderCharacterId = GmMailSenderCharacterId,
+                    SenderAccountId = 0,
+                    SenderName = "GM",
+                    SenderLevel = 86,
+                    ReceiverCharacterId = characterId,
+                    ReceiverAccountId = accountId,
+                    ReceiverName = receiverName ?? string.Empty,
+                    ReceiverLevel = receiverLevel,
+                    Gold = 0,
+                    Text = text,
+                    MailType = 1,
+                    SourceProtocol = 0,
+                    Unlimited = true,
+                    IdempotencyKey = "gm:" + Guid.NewGuid().ToString("N"),
+                    AuditActor = "DfoGmTool",
+                    AuditReason = "GM 发放套装",
+                    Attachments = chunk,
+                };
+
+                var result = _mailboxRepository.SendSystemMail(request);
+                if (!result.Success)
+                {
+                    if (messageIds.Count == 0)
+                        return Error("套装邮件发放失败: " + MailErrorText(result.Error));
+                    return new
+                    {
+                        success = true,
+                        partial = true,
+                        characterId,
+                        itemTemplateId,
+                        name = displayName,
+                        count = attachments.Count,
+                        itemCount = attachments.Count,
+                        viaMail = true,
+                        sendSet = true,
+                        mailCount = messageIds.Count,
+                        messageIds = messageIds.ToArray(),
+                        error = "后续邮件发送失败: " + MailErrorText(result.Error),
+                    };
+                }
+
+                messageIds.Add(result.MessageId);
+            }
+
+            return new
+            {
+                success = true,
+                characterId,
+                itemTemplateId,
+                name = displayName,
+                count = attachments.Count,
+                itemCount = attachments.Count,
+                viaMail = true,
+                sendSet = true,
+                mailCount = messageIds.Count,
+                messageIds = messageIds.ToArray(),
+                itemIds = memberIds,
+            };
+        }
+
+        private static bool TryResolveSetPieceMailConfiguration(
+            int itemTemplateId,
+            EquipmentGrantOptions options,
+            out EquipmentMailConfiguration configuration,
+            out string error)
+        {
+            if (TryResolveEquipmentMailConfiguration(itemTemplateId, options, out configuration, out error))
+                return true;
+            if (options != null)
+            {
+                var fallback = new EquipmentGrantOptions
+                {
+                    State = "normal",
+                    QualityMode = options.QualityMode,
+                };
+                if (TryResolveEquipmentMailConfiguration(itemTemplateId, fallback, out configuration, out error))
+                    return true;
+            }
+
+            return TryResolveEquipmentMailConfiguration(itemTemplateId, null, out configuration, out error);
         }
 
         private object GiveItemViaMail(

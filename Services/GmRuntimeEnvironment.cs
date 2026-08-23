@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Threading;
+using DfoGmTool.ImagePack;
 using DfoGmTool.ServerCore.GameWorld;
 using DfoGmTool.ServerCore.Infrastructure;
 using GmPvfLib;
@@ -15,10 +16,10 @@ namespace DfoGmTool.Services
         private ActiveEnvironment _active;
         private string _startupError;
 
-        public GmRuntimeEnvironment(GmConfig initialConfig)
+        public GmRuntimeEnvironment(GmConfig initialConfig, string imagePacksPath = null)
         {
             if (initialConfig != null)
-                Configure(initialConfig);
+                Configure(initialConfig, imagePacksPath);
         }
 
         public RuntimeEnvironmentStatus GetStatus(bool includeSourceDetails = true)
@@ -34,12 +35,12 @@ namespace DfoGmTool.Services
             }
         }
 
-        public object Configure(string databasePath, string pvfPath)
+        public object Configure(string databasePath, string pvfPath, string imagePacksPath = null)
         {
             if (!GmConfig.TryCreate(databasePath, pvfPath, out var config, out var error))
                 return Failure(error);
 
-            return Configure(config);
+            return Configure(config, imagePacksPath);
         }
 
         public object Execute(Func<GmService, PvfIndexService, object> operation)
@@ -65,18 +66,84 @@ namespace DfoGmTool.Services
             }
         }
 
-        private object Configure(GmConfig config)
+        public ItemIconResult TryGetItemIcon(int itemId)
+        {
+            _gate.EnterReadLock();
+            try
+            {
+                if (_active == null)
+                    return ItemIconResult.Fail("请先选择数据库和 PVF。");
+                if (!string.IsNullOrWhiteSpace(_active.PvfIndex.BuildError))
+                    return ItemIconResult.Fail("PVF 加载失败: " + _active.PvfIndex.BuildError);
+                if (!_active.PvfIndex.IsReady)
+                    return ItemIconResult.Fail("PVF 正在加载，请稍候。");
+                if (!_active.PvfIndex.TryGetIcon(itemId, out var iconPath, out var iconFrame, out var markPath, out var markFrame))
+                    return ItemIconResult.Missing();
+                if (_active.ImagePacks == null
+                    || !_active.ImagePacks.TryRenderPng(iconPath, iconFrame, markPath, markFrame, out var png))
+                    return ItemIconResult.Missing();
+                return ItemIconResult.Ok(png);
+            }
+            finally
+            {
+                _gate.ExitReadLock();
+            }
+        }
+
+        public ItemIconResult TryGetWindowChrome()
+        {
+            _gate.EnterReadLock();
+            try
+            {
+                if (_active?.ImagePacks == null)
+                    return ItemIconResult.Missing();
+                if (!_active.ImagePacks.TryRenderWindowChrome(out var png))
+                    return ItemIconResult.Missing();
+                return ItemIconResult.Ok(png);
+            }
+            finally
+            {
+                _gate.ExitReadLock();
+            }
+        }
+
+        private object Configure(GmConfig config, string imagePacksPath)
         {
             _gate.EnterWriteLock();
             try
             {
                 try
                 {
+                    var requestedImagePacks = string.IsNullOrWhiteSpace(imagePacksPath) ? null : imagePacksPath.Trim();
+                    var imagePacks = ImagePackLibrary.TryOpen(requestedImagePacks);
+                    var resolvedImagePacks = imagePacks != null ? imagePacks.Root : requestedImagePacks;
+
+                    if (_active != null
+                        && PathsEqual(_active.Config.DatabasePath, config.DatabasePath)
+                        && PathsEqual(_active.Config.PvfPath, config.PvfPath))
+                    {
+                        var imagePacksChanged = !PathsEqual(_active.ImagePacksPath, resolvedImagePacks);
+                        if (imagePacksChanged)
+                        {
+                            _active.ReplaceImagePacks(imagePacks, resolvedImagePacks);
+                            LogImagePacks(imagePacks, requestedImagePacks);
+                        }
+
+                        return new
+                        {
+                            success = true,
+                            sourceChanged = false,
+                            imagePacksChanged,
+                            status = BuildStatus(),
+                        };
+                    }
+
                     VerifyDataSource(config);
 
                     // Construct the new services before replacing the live source.
                     var pvfIndex = new PvfIndexService(config.PvfPath);
                     var gm = new GmService(config, pvfIndex);
+                    LogImagePacks(imagePacks, requestedImagePacks);
 
                     Environment.SetEnvironmentVariable("PVF_ARCHIVE_PATH", config.PvfPath);
                     Environment.SetEnvironmentVariable("INVENTORY_DATABASE_PATH", config.DatabasePath);
@@ -84,10 +151,16 @@ namespace DfoGmTool.Services
                     PvfRuntimeCache.ResetForPvfChange();
                     GmService.ResetPvfStaticData();
 
-                    _active = new ActiveEnvironment(config, gm, pvfIndex);
+                    _active = new ActiveEnvironment(config, gm, pvfIndex, imagePacks, resolvedImagePacks);
                     _startupError = null;
                     pvfIndex.WarmInBackground();
-                    return new { success = true, status = BuildStatus() };
+                    return new
+                    {
+                        success = true,
+                        sourceChanged = true,
+                        imagePacksChanged = true,
+                        status = BuildStatus(),
+                    };
                 }
                 catch (Exception ex)
                 {
@@ -101,6 +174,28 @@ namespace DfoGmTool.Services
             {
                 _gate.ExitWriteLock();
             }
+        }
+
+        private static void LogImagePacks(ImagePackLibrary imagePacks, string requestedPath)
+        {
+            if (imagePacks != null)
+            {
+                Console.WriteLine("[ImagePack] 图标目录: " + imagePacks.Root);
+                return;
+            }
+
+            Console.WriteLine(string.IsNullOrWhiteSpace(requestedPath)
+                ? "[ImagePack] 未选择 ImagePacks2，物品预览只有文字没有图标"
+                : "[ImagePack] ImagePacks2 目录无效，物品预览只有文字没有图标");
+        }
+
+        private static bool PathsEqual(string left, string right)
+        {
+            if (string.IsNullOrWhiteSpace(left) && string.IsNullOrWhiteSpace(right))
+                return true;
+            if (string.IsNullOrWhiteSpace(left) || string.IsNullOrWhiteSpace(right))
+                return false;
+            return string.Equals(left.Trim(), right.Trim(), StringComparison.OrdinalIgnoreCase);
         }
 
         private static void VerifyDataSource(GmConfig config)
@@ -164,6 +259,8 @@ namespace DfoGmTool.Services
                 Loading = config != null && !ready && string.IsNullOrWhiteSpace(indexError),
                 Database = includeSourceDetails ? config?.DatabasePath : null,
                 Pvf = includeSourceDetails ? config?.PvfPath : null,
+                ImagePacks = includeSourceDetails ? _active?.ImagePacksPath : null,
+                HasImagePacks = _active?.ImagePacks != null,
                 ServerBin = includeSourceDetails ? config?.ServerBinDir : null,
                 IndexReady = index?.IsReady ?? false,
                 IndexError = includeSourceDetails ? indexError : null,
@@ -179,17 +276,48 @@ namespace DfoGmTool.Services
 
         private sealed class ActiveEnvironment
         {
-            public ActiveEnvironment(GmConfig config, GmService gm, PvfIndexService pvfIndex)
+            public ActiveEnvironment(
+                GmConfig config,
+                GmService gm,
+                PvfIndexService pvfIndex,
+                ImagePackLibrary imagePacks,
+                string imagePacksPath)
             {
                 Config = config;
                 Gm = gm;
                 PvfIndex = pvfIndex;
+                ImagePacks = imagePacks;
+                ImagePacksPath = imagePacksPath;
             }
 
             public GmConfig Config { get; }
             public GmService Gm { get; }
             public PvfIndexService PvfIndex { get; }
+            public ImagePackLibrary ImagePacks { get; private set; }
+            public string ImagePacksPath { get; private set; }
+
+            public void ReplaceImagePacks(ImagePackLibrary imagePacks, string imagePacksPath)
+            {
+                ImagePacks = imagePacks;
+                ImagePacksPath = imagePacksPath;
+            }
         }
+    }
+
+    public readonly struct ItemIconResult
+    {
+        private ItemIconResult(byte[] png, string error)
+        {
+            Png = png;
+            Error = error;
+        }
+
+        public byte[] Png { get; }
+        public string Error { get; }
+
+        public static ItemIconResult Ok(byte[] png) => new ItemIconResult(png, null);
+        public static ItemIconResult Missing() => new ItemIconResult(null, null);
+        public static ItemIconResult Fail(string error) => new ItemIconResult(null, error);
     }
 
     public sealed class RuntimeEnvironmentStatus
@@ -199,6 +327,8 @@ namespace DfoGmTool.Services
         public bool Loading { get; set; }
         public string Database { get; set; }
         public string Pvf { get; set; }
+        public string ImagePacks { get; set; }
+        public bool HasImagePacks { get; set; }
         public string ServerBin { get; set; }
         public bool IndexReady { get; set; }
         public string IndexError { get; set; }

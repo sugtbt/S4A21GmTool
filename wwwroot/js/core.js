@@ -14,13 +14,26 @@ function toast(message, isError) {
 }
 
 async function api(path, options) {
-  const response = await fetch(path, options);
-  const data = await response.json();
+  const response = await fetch(path, { cache: 'no-store', ...options });
+  const text = await response.text();
+  let data = null;
+  if (text) {
+    try {
+      data = JSON.parse(text);
+    } catch {
+      throw new Error(response.ok ? '服务器返回了无法解析的响应' : `请求失败 (${response.status})`);
+    }
+  }
+  if (!response.ok) {
+    throw new Error((data && data.error) || `请求失败 (${response.status})`);
+  }
   if (data && data.success === false) {
     if (data.loginRequired === true && typeof handleAuthenticationRequired === 'function')
       handleAuthenticationRequired();
     throw new Error(data.error || '操作失败');
   }
+  if (data == null)
+    throw new Error('服务器没有返回数据');
   return data;
 }
 

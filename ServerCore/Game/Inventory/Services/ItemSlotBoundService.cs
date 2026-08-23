@@ -238,6 +238,13 @@ namespace DfoGmTool.ServerCore.Game.Inventory
                 && range.End <= physicalRange.End;
         }
 
+        internal static ItemSlotRange GetGuildMedalOpenRange()
+        {
+            return new ItemSlotRange(
+                GuildMedalInventorySlotStart,
+                GuardianGemInventorySlotEnd);
+        }
+
         internal static ItemSlotRange GetAvatarOpenRange(int avatarListParam16)
         {
             return new ItemSlotRange(0, 209);
@@ -359,29 +366,6 @@ namespace DfoGmTool.ServerCore.Game.Inventory
             return false;
         }
 
-        internal static ItemSlotRange GetGuildMedalOpenRange()
-        {
-            return new ItemSlotRange(GuildMedalInventorySlotStart, GuardianGemInventorySlotEnd);
-        }
-
-        private static bool TryGetGuildMedalItemKindBySlot(short slotIndex, out byte itemKind)
-        {
-            if (slotIndex >= GuildMedalInventorySlotStart && slotIndex <= GuildMedalInventorySlotEnd)
-            {
-                itemKind = ItemCore.KindGuildMedal;
-                return true;
-            }
-
-            if (slotIndex >= GuardianGemInventorySlotStart && slotIndex <= GuardianGemInventorySlotEnd)
-            {
-                itemKind = ItemCore.KindGuardianGem;
-                return true;
-            }
-
-            itemKind = ItemCore.KindUnknown;
-            return false;
-        }
-
         private static bool TryGetPetItemKindBySlot(short slotIndex, out byte itemKind)
         {
             if (slotIndex >= PetInventorySlotStart && slotIndex <= PetInventorySlotEnd)
@@ -399,6 +383,24 @@ namespace DfoGmTool.ServerCore.Game.Inventory
             if (slotIndex >= PetConsumableSlotStart && slotIndex <= PetConsumableSlotEnd)
             {
                 itemKind = ItemCore.KindCreatureConsumable;
+                return true;
+            }
+
+            itemKind = ItemCore.KindUnknown;
+            return false;
+        }
+
+        private static bool TryGetGuildMedalItemKindBySlot(short slotIndex, out byte itemKind)
+        {
+            if (slotIndex >= GuildMedalInventorySlotStart && slotIndex <= GuildMedalInventorySlotEnd)
+            {
+                itemKind = ItemCore.KindGuildMedal;
+                return true;
+            }
+
+            if (slotIndex >= GuardianGemInventorySlotStart && slotIndex <= GuardianGemInventorySlotEnd)
+            {
+                itemKind = ItemCore.KindGuardianGem;
                 return true;
             }
 
