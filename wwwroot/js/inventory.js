@@ -10,10 +10,8 @@ const CATEGORY_GROUPS = [
   { title: '仓库', cats: ['个人仓库', '账号金库', '账号晶块', '灵魂仓库', '史诗碎片'] },
 ];
 
-// 名称按品级着色(与发放页同一套 rarity-N 样式); 品级未知(-1)不着色
-const rarityName = (i) => i.rarity >= 0 && i.rarity <= 6
-  ? `<span class="rarity-${i.rarity}">${esc(i.name)}</span>`
-  : esc(i.name);
+// 名称带图标+悬浮预览, 品级着色与发放页同一套 rarity-N
+const rarityName = (i) => itemPreviewName(i.templateId, i.name, i.rarity);
 
 // 每类的表格模板: 列头 + 行渲染
 const CATEGORY_TEMPLATES = {
@@ -68,19 +66,28 @@ let inventoryItems = [];
 let activeCategory = '全部';
 const INV_PAGE_SIZE = 10;
 let invPage = 0; // 切分类归零; 数据刷新后越界自动回退末页
+let invLoadSeq = 0;
 
 async function loadItems() {
   if (!currentChar) return;
   const epoch = selectEpoch;
+  const seq = ++invLoadSeq;
   try {
     const data = await api(`/api/characters/${currentChar.characterId}/items`);
-    if (epoch !== selectEpoch) return;
+    if (epoch !== selectEpoch || seq !== invLoadSeq) return;
     inventoryItems = data.items;
     renderCategoryNav();
     renderItemTable();
   } catch (e) {
+    if (epoch !== selectEpoch || seq !== invLoadSeq) return;
     toast(e.message, true);
   }
+}
+
+function dropInventoryRow(listType, slot) {
+  inventoryItems = inventoryItems.filter((item) => item.listType !== listType || item.slot !== slot);
+  renderCategoryNav();
+  renderItemTable();
 }
 
 function renderCategoryNav() {
@@ -140,7 +147,7 @@ function renderWalletRows(tbody, items) {
   for (const item of items) {
     const type = WALLET_TYPES[item.slot];
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${item.slot}</td><td>${esc(item.name)}</td>
+    tr.innerHTML = `<td>${item.slot}</td><td>${itemPreviewName(item.templateId, item.name, item.rarity)}</td>
       <td>${(item.count ?? 0).toLocaleString()}</td>
       <td><input type="number" min="0" class="val-input" value="${item.count ?? 0}"></td>
       <td>${type ? '<button class="mini">覆写</button>' : ''}</td>`;
@@ -223,6 +230,7 @@ function renderItemTable() {
         // count=0 整删, 单件删除直接生效
         await post(`/api/characters/${currentChar.characterId}/items/delete-at`,
           { listType: item.listType, slot: item.slot, count: 0 });
+        dropInventoryRow(item.listType, item.slot);
         toast('已删除');
         loadItems();
       } catch (e) {

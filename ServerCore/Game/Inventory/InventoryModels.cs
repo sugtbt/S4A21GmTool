@@ -1,8 +1,20 @@
 using System;
 using System.Collections.Generic;
+using DfoGmTool.ServerCore.Game.ItemUpgrade;
 
 namespace DfoGmTool.ServerCore.Game.Inventory
 {
+    internal sealed class UsableCountLimitState
+    {
+        public int ItemId { get; set; }
+
+        public int UsedCount { get; set; }
+
+        public int UsableCountLimit { get; set; }
+
+        public int DayId { get; set; }
+    }
+
     // 装备实例的品质常量。服务端生成装备统一写这个种子:
     // 999999998 = 最上级(真机实证); 0 会导致修理后装备消失, 禁用。
     public static class ItemQuality
@@ -130,14 +142,21 @@ namespace DfoGmTool.ServerCore.Game.Inventory
         // 本次购买是否扣了金币(用于商城回包决定是否刷新主背包 slot0 金币显示)。
         public bool GoldSpent { get; set; }
 
+        // 主背包虚拟资源发生变化，方向不限；资源身份由 SlotIndex 统一解析。
+        public bool MainVirtualCountChanged { get; set; }
+
         // 契约等道具购买即消耗，不入库；为 true 时跳过 ITEM_LIST 更新通知。
         public bool ConsumedOnPurchase { get; set; }
 
         public int CostItemTemplateId { get; set; }
 
-        public int CostItemNewStackCount { get; set; }
+        public int CostItemRemainingCount { get; set; }
 
         public short CostItemSlotIndex { get; set; }
+
+        internal ItemCore CoreSnapshot { get; set; }
+
+        internal UsableCountLimitState UsableCountState { get; set; }
 
         public List<InventoryMutationResult> ExtraResults { get; } = new List<InventoryMutationResult>();
 
@@ -150,6 +169,9 @@ namespace DfoGmTool.ServerCore.Game.Inventory
         public bool PetSatietyChanged { get; set; }
 
         public bool NameTagEquipped { get; set; }
+
+        // 购买奖励因背包溢出转邮件时置 true，客户端只需要邮箱提醒。
+        public bool DeliveredByMail { get; set; }
     }
 
     public enum PersonalCargoUpgradeTicketStatus
@@ -271,6 +293,12 @@ namespace DfoGmTool.ServerCore.Game.Inventory
 
         public int GrantedCount { get; set; }
 
+        public ushort Durability { get; set; }
+
+        public byte Attr { get; set; }
+
+        public int ExpireTime { get; set; }
+
         public SpecialRewardOutcome SpecialOutcome { get; set; }
 
         internal static BoosterRewardResult FromSpecialOutcome(SpecialRewardOutcome outcome)
@@ -284,6 +312,32 @@ namespace DfoGmTool.ServerCore.Game.Inventory
                     ListType = InventoryListType.Main,
                     SlotIndex = outcome.WalletSlot,
                     ItemTemplateId = ReviveCoin.ReviveCoinService.ItemId,
+                    StackCount = outcome.WalletNewTotal,
+                    GrantedCount = outcome.Count,
+                    SpecialOutcome = outcome,
+                };
+            }
+
+            if (outcome.Kind == SpecialRewardKind.HappyTokenCera)
+            {
+                return new BoosterRewardResult
+                {
+                    ListType = InventoryListType.Main,
+                    SlotIndex = -1,
+                    ItemTemplateId = outcome.ItemTemplateId,
+                    StackCount = 0,
+                    GrantedCount = outcome.Count,
+                    SpecialOutcome = outcome,
+                };
+            }
+
+            if (outcome.Kind == SpecialRewardKind.EpicPiece)
+            {
+                return new BoosterRewardResult
+                {
+                    ListType = InventoryListType.Main,
+                    SlotIndex = -1,
+                    ItemTemplateId = outcome.ItemTemplateId,
                     StackCount = outcome.WalletNewTotal,
                     GrantedCount = outcome.Count,
                     SpecialOutcome = outcome,
@@ -338,6 +392,8 @@ namespace DfoGmTool.ServerCore.Game.Inventory
 
         public int ConsumedSourceCount { get; set; }
 
+        public bool SourceExpiredDeleted { get; set; }
+
         public int ConsumedMaterialItemTemplateId { get; set; }
 
         public int ConsumedMaterialCount { get; set; }
@@ -372,6 +428,8 @@ namespace DfoGmTool.ServerCore.Game.Inventory
 
         public byte MagicBoxClientType { get; set; }
 
+        internal UsableCountLimitState UsableCountState { get; set; }
+
         public List<(int itemTemplateId, int count)> ActivatedPremiums { get; } = new List<(int itemTemplateId, int count)>();
     }
 
@@ -380,6 +438,76 @@ namespace DfoGmTool.ServerCore.Game.Inventory
         public InventoryMutationResult MaterialItem { get; set; }
 
         public bool MaterialConsumed { get; set; }
+    }
+
+    public sealed class GuardianGemUseCommand
+    {
+        public int EquippedMedalItemTemplateId { get; set; }
+
+        public short MaterialSlotIndex { get; set; }
+
+        public int GuardianGemItemTemplateId { get; set; }
+
+        public byte SocketIndex { get; set; }
+    }
+
+    public sealed class GuardianGemUseResult
+    {
+        public const byte ErrorInvalidRequest = 0x04;
+        public const byte ErrorGuardianGemMissing = 0x12;
+
+        public bool Success { get; set; }
+
+        public byte ErrorCode { get; set; }
+
+        public GuardianGemUseCommand Command { get; set; }
+
+        public short TargetSlotIndex { get; set; } = (short)EquipmentType.GuildMedal;
+
+        public int TargetItemTemplateId { get; set; }
+
+        public short MaterialSlotIndex { get; set; }
+
+        public int MaterialItemTemplateId { get; set; }
+
+        public byte SocketIndex { get; set; }
+
+        public int PreviousGuardianGemItemId { get; set; }
+
+        public int MaterialRemainingCount { get; set; }
+
+        public static GuardianGemUseResult Error(GuardianGemUseCommand command, byte errorCode)
+        {
+            return new GuardianGemUseResult
+            {
+                Command = command,
+                ErrorCode = errorCode,
+                TargetItemTemplateId = command != null ? command.EquippedMedalItemTemplateId : 0,
+                MaterialSlotIndex = command != null ? command.MaterialSlotIndex : (short)0,
+                MaterialItemTemplateId = command != null ? command.GuardianGemItemTemplateId : 0,
+                SocketIndex = command != null ? command.SocketIndex : (byte)0,
+            };
+        }
+
+        public static GuardianGemUseResult Ok(
+            GuardianGemUseCommand command,
+            int previousGuardianGemItemId,
+            int materialRemainingCount)
+        {
+            return new GuardianGemUseResult
+            {
+                Success = true,
+                Command = command,
+                ErrorCode = 0,
+                TargetSlotIndex = (short)EquipmentType.GuildMedal,
+                TargetItemTemplateId = command != null ? command.EquippedMedalItemTemplateId : 0,
+                MaterialSlotIndex = command != null ? command.MaterialSlotIndex : (short)0,
+                MaterialItemTemplateId = command != null ? command.GuardianGemItemTemplateId : 0,
+                SocketIndex = command != null ? command.SocketIndex : (byte)0,
+                PreviousGuardianGemItemId = previousGuardianGemItemId,
+                MaterialRemainingCount = materialRemainingCount,
+            };
+        }
     }
 
     public sealed class EquipmentEmblemApplyRequest

@@ -30,6 +30,18 @@ namespace DfoGmTool.Services
             public int UsablePeriodDays;
             public bool DailyDeleteItem;
             public bool HasInvalidExpirationDefinition;
+            public string IconPath;      // [icon] 路径，无则没有图标
+            public int IconFrame;
+            public string IconMarkPath;  // [icon mark]
+            public int IconMarkFrame;
+            public string Explain;
+            public string BasicExplain;
+            public string DetailExplain;
+            public string FlavorText;
+            public string UsableJob;
+            public List<string> Stats;
+            public int PartSetIndex; // [part set index]，0 表示不属于套装
+            public int LinkedCardId; // 宝珠 [monster card id]，0 表示没有对应卡片
         }
 
         public readonly struct ItemExpirationDefinition
@@ -230,6 +242,9 @@ namespace DfoGmTool.Services
                     canAmplify = e.CanHaveAmplifyState,
                     canAmplifyLevel = e.CanAmplifyLevel,
                     isWeapon = e.IsWeapon,
+                    setId = e.PartSetIndex > 0 ? e.PartSetIndex : 0,
+                    setName = ResolveSetName(e.PartSetIndex),
+                    setSendable = IsSetSendable(e, null),
                     templateExpiration = new
                     {
                         known = true,
@@ -409,7 +424,9 @@ namespace DfoGmTool.Services
                             UsablePeriodDays = expiration.UsablePeriodDays,
                             DailyDeleteItem = expiration.DailyDeleteItem,
                             HasInvalidExpirationDefinition = expiration.HasInvalidDefinition,
+                            PartSetIndex = model.PartSetIndex > 0 ? model.PartSetIndex : 0,
                         };
+                        FillPreview(results[i], model, text);
                     }
                     else
                     {
@@ -431,6 +448,7 @@ namespace DfoGmTool.Services
                             DailyDeleteItem = expiration.DailyDeleteItem,
                             HasInvalidExpirationDefinition = expiration.HasInvalidDefinition,
                         };
+                        FillPreview(results[i], model, text);
                     }
                 }
                 catch

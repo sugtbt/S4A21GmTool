@@ -24,7 +24,7 @@ namespace DfoGmTool
                 return;
             }
 
-            var runtime = new GmRuntimeEnvironment(initialConfig);
+            var runtime = new GmRuntimeEnvironment(initialConfig, hostConfig.ImagePacksPath);
             var initialStatus = runtime.GetStatus();
             if (hostConfig.AllowRemoteAccess && !initialStatus.Configured)
             {
@@ -54,6 +54,8 @@ namespace DfoGmTool
                     loading = status.Loading,
                     database = status.Database,
                     pvf = status.Pvf,
+                    imagePacks = status.ImagePacks,
+                    hasImagePacks = status.HasImagePacks,
                     serverBin = status.ServerBin,
                     indexReady = status.IndexReady,
                     indexError = status.IndexError,
@@ -64,6 +66,16 @@ namespace DfoGmTool
                     canChangeSource = !hostConfig.AllowRemoteAccess && authenticated,
                 });
             }
+
+            app.Use(async (context, next) =>
+            {
+                if (context.Request.Path.StartsWithSegments("/api"))
+                {
+                    context.Response.Headers.CacheControl = "no-store";
+                    context.Response.Headers.Pragma = "no-cache";
+                }
+                await next(context);
+            });
 
             // 本地工具: 异常直接以 JSON 返回, 方便定位
             app.Use(async (context, next) =>
@@ -132,8 +144,12 @@ namespace DfoGmTool
             });
             app.MapPost("/api/environment", (RuntimeEnvironmentRequest body) =>
                 Results.Json(hostConfig.AllowRemoteAccess
-                    ? new { success = false, error = "远程访问模式下请在 config.ini 修改数据库和 PVF 路径。" }
-                    : runtime.Configure(body.DatabasePath, body.PvfPath)));
+                    ? new { success = false, error = "远程访问模式下请在 config.ini 修改数据库、PVF 和 ImagePacks2 路径。" }
+                    : runtime.Configure(body.DatabasePath, body.PvfPath, body.ImagePacksPath)));
+            app.MapPost("/api/environment/browse", (BrowsePathRequest body) =>
+                Results.Json(hostConfig.AllowRemoteAccess
+                    ? new { success = false, error = "远程访问模式下无法打开本机文件框。" }
+                    : NativePathDialog.Pick(body)));
 
             app.MapGet("/api/accounts", () => WithRuntime((gm, _) => gm.ListAccounts()));
             app.MapGet("/api/accounts/{id:int}/detail", (int id) => WithRuntime((gm, pvfIndex) => gm.GetAccountDetail(id, pvfIndex)));
@@ -177,7 +193,8 @@ namespace DfoGmTool
                     body.Count,
                     pvfIndex,
                     body.Direct,
-                    body.EquipmentOptions)));
+                    body.EquipmentOptions,
+                    body.SendSet)));
             app.MapPost("/api/characters/{id:int}/items/remove", (int id, ItemRequest body) =>
                 WithRuntime((gm, _) => gm.RemoveItem(id, body.TemplateId, body.Count)));
             app.MapPost("/api/characters/{id:int}/items/delete-at", (int id, DeleteAtRequest body) =>
@@ -190,6 +207,8 @@ namespace DfoGmTool
                 WithRuntime((gm, _) => gm.AdjustCera(id, body.Amount, body.Type)));
             app.MapPost("/api/characters/{id:int}/level", (int id, LevelRequest body) =>
                 WithRuntime((gm, _) => gm.SetLevel(id, body.Level)));
+            app.MapPost("/api/characters/{id:int}/name", (int id, RenameRequest body) =>
+                WithRuntime((gm, _) => gm.RenameCharacter(id, body.Name)));
             app.MapPost("/api/characters/{id:int}/sp", (int id, SpRequest body) =>
                 WithRuntime((gm, _) => gm.AdjustSpTp(id, body.Sp, body.Tp)));
             app.MapGet("/api/characters/{id:int}/growoptions", (int id) => WithRuntime((gm, _) => gm.GetGrowOptions(id)));
@@ -225,6 +244,12 @@ namespace DfoGmTool
             app.MapGet("/api/items/categories", () => WithRuntime((_, pvfIndex) => pvfIndex.GetItemCategories()));
             app.MapGet("/api/items/browse", (string q, string kind, string tag, string segment, string special, int? minLevel, int? maxLevel, int? rarity, int? limit, int? offset, string expiration = null) =>
                 WithRuntime((_, pvfIndex) => pvfIndex.SearchItems(q, kind, tag, segment, special, minLevel ?? 0, maxLevel ?? 0, rarity ?? -1, limit ?? 100, offset ?? 0, expiration)));
+            app.MapGet("/api/items/{id:int}/preview", (int id) =>
+                WithRuntime((_, pvfIndex) => pvfIndex.GetItemPreview(id)));
+            app.MapGet("/api/items/{id:int}/icon", (int id, HttpContext context) =>
+                WritePng(context, runtime.TryGetItemIcon(id)));
+            app.MapGet("/api/preview/chrome/window", (HttpContext context) =>
+                WritePng(context, runtime.TryGetWindowChrome()));
 
             Console.WriteLine("A21 GM Tool 监听: " + hostConfig.ListenUrl);
             Console.WriteLine("配置文件: " + hostConfig.ConfigPath);
@@ -241,6 +266,19 @@ namespace DfoGmTool
             {
                 ReportStartupFailure("无法监听 " + hostConfig.ListenUrl + ":\r\n" + ex.GetBaseException().Message);
             }
+        }
+
+        private static IResult WritePng(HttpContext context, ItemIconResult icon)
+        {
+            if (icon.Png != null)
+            {
+                context.Response.Headers.CacheControl = "private, max-age=86400";
+                return Results.File(icon.Png, "image/png");
+            }
+            if (!string.IsNullOrWhiteSpace(icon.Error))
+                return Results.Json(new { success = false, error = icon.Error });
+            context.Response.Headers.CacheControl = "no-store";
+            return Results.NoContent();
         }
 
         private static void ReportStartupFailure(string error)
@@ -286,6 +324,7 @@ namespace DfoGmTool
         public int TemplateId { get; set; }
         public int Count { get; set; }
         public bool Direct { get; set; }
+        public bool SendSet { get; set; }
         public Services.EquipmentGrantOptions EquipmentOptions { get; set; }
     }
 
@@ -311,6 +350,7 @@ namespace DfoGmTool
     {
         public string DatabasePath { get; set; }
         public string PvfPath { get; set; }
+        public string ImagePacksPath { get; set; }
     }
 
     public sealed class LoginRequest
@@ -371,6 +411,11 @@ namespace DfoGmTool
     public sealed class LevelRequest
     {
         public int Level { get; set; }
+    }
+
+    public sealed class RenameRequest
+    {
+        public string Name { get; set; }
     }
 
     public sealed class SpRequest

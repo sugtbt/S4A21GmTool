@@ -129,6 +129,7 @@ ORDER BY a.message_id, a.ordinal, a.attachment_id;";
                     {
                         itemId = attachment.ItemTemplateId,
                         name = pvfIndex.ResolveItemName(attachment.ItemTemplateId) ?? string.Empty,
+                        rarity = pvfIndex.ResolveItemRarity(attachment.ItemTemplateId),
                         count = attachment.ItemCount,
                         claimedFlag = attachment.ClaimedFlag,
                         claimed = attachment.ClaimedFlag != 0,

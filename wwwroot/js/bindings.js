@@ -4,6 +4,7 @@
 
 if (window.DfoTheme) window.DfoTheme.bind();
 bindRuntimeEnvironment();
+initItemPreview();
 
 $('#give-equipment-form').onsubmit = (event) => {
   event.preventDefault();
@@ -12,6 +13,7 @@ $('#give-equipment-form').onsubmit = (event) => {
 $('#btn-cancel-give-equipment').onclick = () => closeGiveEquipmentModal();
 $('#btn-close-give-equipment').onclick = () => closeGiveEquipmentModal();
 $('#give-equipment-state').onchange = updateGiveEquipmentFields;
+$('#give-equipment-send-set').onchange = updateGiveEquipmentSetMode;
 for (const sel of ['#give-equipment-count', '#give-equipment-reinforce-level',
   '#give-equipment-amplify-level', '#give-equipment-forging-level']) {
   $(sel).addEventListener('input', () => $(sel).setCustomValidity(''));
@@ -49,6 +51,8 @@ $('#btn-clear-mail').onclick = clearMailbox;
 $('#btn-clear-category').onclick = clearCurrentCategory;
 $('#inventory-expiration').onchange = () => { invPage = 0; renderItemTable(); };
 $('#btn-account-panel').onclick = showAccountPanel;
+$('#btn-rename').onclick = renameCharacter;
+$('#name-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') renameCharacter(); });
 $('#btn-set-level').onclick = setLevel;
 $('#btn-sp').onclick = adjustSp;
 $('#grow-first').onchange = renderSecondOptions;

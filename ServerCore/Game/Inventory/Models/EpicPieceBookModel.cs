@@ -74,6 +74,38 @@ namespace DfoGmTool.ServerCore.Game.Inventory
             return true;
         }
 
+        public bool TryConsumeByPieceId(int pieceId, int count, out int finalCount)
+        {
+            finalCount = 0;
+            if (count < 0 || !EpicPieceCatalogService.TryGetIndexByPieceId(pieceId, out var index))
+                return false;
+            if (count == 0)
+            {
+                finalCount = GetCountByPieceId(pieceId);
+                return true;
+            }
+
+            EnsureCatalogSize();
+            if (_counts[index] < count)
+                return false;
+
+            _counts[index] -= count;
+            finalCount = _counts[index];
+            _dirtyIndexes.Add(index);
+            return true;
+        }
+
+        public bool TrySetCountByPieceId(int pieceId, int count)
+        {
+            if (!EpicPieceCatalogService.TryGetIndexByPieceId(pieceId, out var index))
+                return false;
+
+            EnsureCatalogSize();
+            _counts[index] = Math.Max(0, count);
+            _dirtyIndexes.Add(index);
+            return true;
+        }
+
         public List<EpicPieceCount> BuildEntries(bool includeZero = false)
         {
             EnsureCatalogSize();

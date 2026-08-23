@@ -1,5 +1,20 @@
 // ---- 角色属性 ----
 
+async function renameCharacter() {
+  if (!currentChar) return;
+  const name = $('#name-input').value.trim();
+  if (!name) return toast('名字不能为空', true);
+  try {
+    const data = await post(`/api/characters/${currentChar.characterId}/name`, { name });
+    toast('角色已改名为 ' + data.name);
+    refreshAccountsSidebar();
+    loadCharacters();
+    refreshHeader();
+  } catch (e) {
+    toast(e.message, true);
+  }
+}
+
 async function setLevel() {
   if (!currentChar) return;
   const level = parseInt($('#level-input').value, 10);

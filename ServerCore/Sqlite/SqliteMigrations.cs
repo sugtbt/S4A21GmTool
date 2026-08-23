@@ -1,10 +1,11 @@
 using System;
 using System.Collections.Generic;
+using DfoGmTool.ServerCore;
 using Microsoft.Data.Sqlite;
 
 namespace DfoGmTool.ServerCore.Sqlite
 {
-    // 与 servers4a21 SqliteMigrations 对齐。GM 仅在 schema 比工具新时跳过未知迁移并继续打开。
+    // schema 高于工具时跳过未知迁移，按现有表打开。
     internal static class SqliteMigrations
     {
         internal const string BaselineId = "86jp-database-v1";
@@ -17,6 +18,9 @@ namespace DfoGmTool.ServerCore.Sqlite
                 new MigrationStep(2, "expand_item_core_to_99_and_shift_equipment_slots", ApplyExpandItemCoreTo99),
                 new MigrationStep(3, "import_character_new_items", ApplyImportCharacterNewItems),
                 new MigrationStep(4, "add_item_purchase_limits", ApplyPurchaseLimitTracking),
+                new MigrationStep(5, "add_aura_skin_flag", ApplyAuraSkinFlag),
+                new MigrationStep(6, "add_daily_challenge_entry_claims", ApplyDailyChallengeEntryClaims),
+                new MigrationStep(7, "add_character_item_states", ApplyCharacterItemStates),
             };
 
         internal static int CurrentVersion =>
@@ -153,6 +157,94 @@ CREATE INDEX IF NOT EXISTS idx_item_purchase_limits_account_reset
     ON item_purchase_limits(account_id, reset_type);";
                 command.ExecuteNonQuery();
             }
+        }
+
+        private static void ApplyAuraSkinFlag(
+            SqliteConnection connection,
+            SqliteTransaction transaction)
+        {
+            AddColumnIfMissing(
+                connection,
+                transaction,
+                "characters",
+                "aura_skin_flag",
+                "INTEGER NOT NULL DEFAULT 0");
+        }
+
+        private static void ApplyDailyChallengeEntryClaims(
+            SqliteConnection connection,
+            SqliteTransaction transaction)
+        {
+            ExecuteSql(connection, transaction, @"
+CREATE TABLE IF NOT EXISTS character_daily_challenge_entry_claims (
+    character_id INTEGER NOT NULL,
+    group_index INTEGER NOT NULL CHECK (group_index >= 0 AND group_index < 6),
+    entry_index INTEGER NOT NULL CHECK (entry_index >= 0),
+    quest_id INTEGER NOT NULL CHECK (quest_id > 0),
+    claimed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (character_id, group_index, entry_index),
+    FOREIGN KEY (character_id, group_index, entry_index)
+        REFERENCES character_daily_challenge_entries(character_id, group_index, entry_index)
+        ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS character_daily_challenge_progress_events (
+    character_id INTEGER NOT NULL,
+    source_event_id TEXT NOT NULL,
+    group_index INTEGER NOT NULL,
+    entry_index INTEGER NOT NULL,
+    quest_id INTEGER NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (character_id, source_event_id, group_index, entry_index),
+    FOREIGN KEY (character_id, group_index, entry_index)
+        REFERENCES character_daily_challenge_entries(character_id, group_index, entry_index)
+        ON DELETE CASCADE
+);");
+        }
+
+        private static void ApplyCharacterItemStates(
+            SqliteConnection connection,
+            SqliteTransaction transaction)
+        {
+            var hasLegacy = TableExists(connection, transaction, "character_item_values");
+            if (hasLegacy)
+            {
+                ExecuteSql(
+                    connection,
+                    transaction,
+                    "ALTER TABLE character_item_values RENAME TO character_item_values_legacy;");
+            }
+
+            ExecuteSql(connection, transaction, @"
+CREATE TABLE IF NOT EXISTS character_item_states (
+    character_id INTEGER NOT NULL,
+    state_kind TEXT NOT NULL CHECK(state_kind IN ('cooltime', 'effect')),
+    item_id INTEGER NOT NULL,
+    expire_time INTEGER NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (character_id, state_kind, item_id),
+    FOREIGN KEY (character_id) REFERENCES characters(character_id) ON DELETE CASCADE
+);");
+
+            if (!hasLegacy)
+                return;
+
+            ExecuteSql(connection, transaction, @"
+INSERT OR REPLACE INTO character_item_states (
+    character_id, state_kind, item_id, expire_time, updated_at
+)
+SELECT character_id,
+       list_kind,
+       item_id,
+       MAX(value),
+       CURRENT_TIMESTAMP
+FROM character_item_values_legacy
+WHERE list_kind IN ('cooltime', 'effect')
+  AND item_id > 0
+  AND value > 0
+GROUP BY character_id, list_kind, item_id;
+
+DROP TABLE character_item_values_legacy;");
         }
 
         private static void ImportCharacterNewItems(
@@ -535,6 +627,48 @@ WHERE type = 'table' AND name = @name;";
                 command.Parameters.AddWithValue("@name", tableName);
                 return Convert.ToInt32(command.ExecuteScalar()) != 0;
             }
+        }
+
+        private static bool ColumnExists(
+            SqliteConnection connection,
+            SqliteTransaction transaction,
+            string tableName,
+            string columnName)
+        {
+            using (var command = connection.CreateCommand())
+            {
+                command.Transaction = transaction;
+                command.CommandText = $"PRAGMA table_info({tableName});";
+                using (var reader = command.ExecuteReader())
+                {
+                    while (reader.Read())
+                    {
+                        if (string.Equals(
+                                reader.GetString(1),
+                                columnName,
+                                StringComparison.OrdinalIgnoreCase))
+                            return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        private static void AddColumnIfMissing(
+            SqliteConnection connection,
+            SqliteTransaction transaction,
+            string tableName,
+            string columnName,
+            string columnDefinition)
+        {
+            if (ColumnExists(connection, transaction, tableName, columnName))
+                return;
+
+            ExecuteSql(
+                connection,
+                transaction,
+                $"ALTER TABLE {tableName} ADD COLUMN {columnName} {columnDefinition};");
         }
 
         internal static long ReadVersion(SqliteConnection connection)

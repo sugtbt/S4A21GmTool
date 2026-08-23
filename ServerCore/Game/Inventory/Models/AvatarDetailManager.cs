@@ -9,10 +9,13 @@ namespace DfoGmTool.ServerCore.Game.Inventory
     {
         private Dictionary<long, AvatarDetail> _details = new Dictionary<long, AvatarDetail>();
         private readonly HashSet<long> _dirtyAvatarUids = new HashSet<long>();
+        private readonly HashSet<long> _deletedAvatarUids = new HashSet<long>();
 
         public IReadOnlyCollection<AvatarDetail> Details => _details.Values;
 
         public IReadOnlyCollection<long> DirtyDetailUids => _dirtyAvatarUids;
+
+        public IReadOnlyCollection<long> DeletedDetailUids => _deletedAvatarUids;
 
         public void LoadForCharacter(int characterId)
         {
@@ -28,6 +31,7 @@ namespace DfoGmTool.ServerCore.Game.Inventory
         {
             _details = AvatarDetailRepository.LoadForCharacter(connection, characterId);
             _dirtyAvatarUids.Clear();
+            _deletedAvatarUids.Clear();
         }
 
         public AvatarDetail GetDetail(long avatarUid)
@@ -46,6 +50,7 @@ namespace DfoGmTool.ServerCore.Game.Inventory
             if (detail == null || detail.AvatarUid <= 0)
                 return;
 
+            _deletedAvatarUids.Remove(detail.AvatarUid);
             _details[detail.AvatarUid] = detail;
         }
 
@@ -54,7 +59,10 @@ namespace DfoGmTool.ServerCore.Game.Inventory
             Attach(detail);
             var saved = InventoryPersistenceService.SaveAvatarDetailImmediately(detail);
             if (saved && detail != null)
+            {
                 _dirtyAvatarUids.Remove(detail.AvatarUid);
+                _deletedAvatarUids.Remove(detail.AvatarUid);
+            }
             return saved;
         }
 
@@ -117,6 +125,17 @@ namespace DfoGmTool.ServerCore.Game.Inventory
                 return false;
 
             _dirtyAvatarUids.Remove(avatarUid);
+            _deletedAvatarUids.Remove(avatarUid);
+            return _details.Remove(avatarUid);
+        }
+
+        internal bool RemoveDirty(long avatarUid)
+        {
+            if (avatarUid <= 0)
+                return false;
+
+            _dirtyAvatarUids.Remove(avatarUid);
+            _deletedAvatarUids.Add(avatarUid);
             return _details.Remove(avatarUid);
         }
 
@@ -126,6 +145,7 @@ namespace DfoGmTool.ServerCore.Game.Inventory
                 return false;
 
             _dirtyAvatarUids.Remove(avatarUid);
+            _deletedAvatarUids.Remove(avatarUid);
             var removed = _details.Remove(avatarUid);
             InventoryPersistenceService.DeleteAvatarDetailImmediately(avatarUid);
             return removed;
@@ -134,7 +154,10 @@ namespace DfoGmTool.ServerCore.Game.Inventory
         internal void MarkDirty(long avatarUid)
         {
             if (avatarUid > 0)
+            {
+                _deletedAvatarUids.Remove(avatarUid);
                 _dirtyAvatarUids.Add(avatarUid);
+            }
         }
 
         internal IReadOnlyList<AvatarDetail> GetDirtyDetails()
@@ -152,6 +175,7 @@ namespace DfoGmTool.ServerCore.Game.Inventory
         internal void ClearDirtyState()
         {
             _dirtyAvatarUids.Clear();
+            _deletedAvatarUids.Clear();
         }
 
         private static int ResolveAvatarExpireDate(int itemId)

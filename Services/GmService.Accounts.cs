@@ -92,6 +92,7 @@ FROM accounts WHERE account_id = @aid;";
                         itemId = cube.ItemId,
                         slot = cube.Slot,
                         name = pvfIndex.ResolveItemName(cube.ItemId),
+                        rarity = pvfIndex.ResolveItemRarity(cube.ItemId),
                         count = cube.Count,
                     });
                 }
@@ -104,6 +105,7 @@ FROM accounts WHERE account_id = @aid;";
                         itemId = soul.ItemId,
                         slot = soul.Slot,
                         name = pvfIndex.ResolveItemName(soul.ItemId),
+                        rarity = pvfIndex.ResolveItemRarity(soul.ItemId),
                         count = soul.Count,
                     });
                 }
@@ -122,6 +124,7 @@ FROM accounts WHERE account_id = @aid;";
                         slot = (int)item.SlotIndex,
                         templateId,
                         name = pvfIndex.ResolveItemName(templateId),
+                        rarity = pvfIndex.ResolveItemRarity(templateId),
                         kind,
                         count = kind == "equipment" ? 1 : core.Count,
                         durability = (int)core.Durability,

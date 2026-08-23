@@ -11,6 +11,7 @@ namespace DfoGmTool.ServerCore.Game.Inventory
         InvalidCount = 4,
         StackLimitExceeded = 5,
         MetadataNotFound = 6,
+        DifferentState = 7,
     }
 
     internal readonly struct InventoryStackPlan
@@ -33,6 +34,16 @@ namespace DfoGmTool.ServerCore.Game.Inventory
             return item != null
                 && !item.IsEmpty
                 && !item.IsEquipmentItem();
+        }
+
+        internal static bool CanShareStack(ItemCore source, ItemCore destination)
+        {
+            return source != null
+                && destination != null
+                && source.ItemId == destination.ItemId
+                && IsStackable(source)
+                && IsStackable(destination)
+                && source.EnchantUpgradeCount == destination.EnchantUpgradeCount;
         }
 
         internal static int NormalizeInsertCount(ItemCore item, int requestedCount)
@@ -94,6 +105,12 @@ namespace DfoGmTool.ServerCore.Game.Inventory
             if (!IsStackable(source) || !IsStackable(destination))
             {
                 rejectReason = InventoryStackRejectReason.NotStackable;
+                return false;
+            }
+
+            if (!CanShareStack(source, destination))
+            {
+                rejectReason = InventoryStackRejectReason.DifferentState;
                 return false;
             }
 

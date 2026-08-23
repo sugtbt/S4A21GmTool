@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
+using DfoGmTool.ServerCore.Infrastructure;
 using PremiumService = DfoGmTool.ServerCore.Game.Premium.PremiumService;
 using ReviveCoinService = DfoGmTool.ServerCore.Game.ReviveCoin.ReviveCoinService;
+using DfoGmTool.ServerCore;
 
 namespace DfoGmTool.ServerCore.Game.Inventory
 {
@@ -25,6 +27,7 @@ namespace DfoGmTool.ServerCore.Game.Inventory
         InventoryItem = 1,
         MainVirtualCount = 2,
         Premium = 3,
+        AccountCurrency = 4,
         EpicPiece = 5,
     }
 
@@ -472,8 +475,22 @@ namespace DfoGmTool.ServerCore.Game.Inventory
             if (TryPlanPremium(itemTemplateId, count, request, out entry))
                 return true;
 
+            if (SpecialRewardRouter.TryResolveAccountCurrencyReward(itemTemplateId, count, out var accountCurrencyOutcome))
+                return TryPlanAccountCurrency(
+                    planningInventory,
+                    request,
+                    accountCurrencyOutcome,
+                    out entry,
+                    out error);
+
             if (EpicPieceCatalogService.IsEpicPieceId(itemTemplateId))
-                return TryPlanEpicPiece(planningInventory, request, itemTemplateId, count, out entry, out error);
+                return TryPlanEpicPiece(
+                    planningInventory,
+                    request,
+                    itemTemplateId,
+                    count,
+                    out entry,
+                    out error);
 
             if (TryResolveMainVirtualReward(itemTemplateId, out var slotIndex, out var slotItemId))
                 return TryPlanMainVirtualCount(planningInventory, request, itemTemplateId, count, slotIndex, slotItemId, out entry, out error);
@@ -490,6 +507,14 @@ namespace DfoGmTool.ServerCore.Game.Inventory
             var insertCount = InventoryStackRuleService.NormalizeInsertCount(core, count);
             if (!InventoryInsertService.TryPlanInsertByDefaultRule(planningInventory, core, insertCount, out var insertPlan))
             {
+                LogInventoryInsertFailure(
+                    planningInventory,
+                    itemTemplateId,
+                    core,
+                    count,
+                    insertCount,
+                    insertPlan != null ? insertPlan.Error : InventoryInsertError.InvalidTargetList,
+                    "plan");
                 error = InventoryRewardGrantError.InsertPlanFailed;
                 return false;
             }
@@ -497,6 +522,14 @@ namespace DfoGmTool.ServerCore.Game.Inventory
             if (!InventoryInsertService.TryApplyInsertPlan(planningInventory, core, insertPlan, out var reserveResult)
                 || !reserveResult.Success)
             {
+                LogInventoryInsertFailure(
+                    planningInventory,
+                    itemTemplateId,
+                    core,
+                    count,
+                    insertCount,
+                    reserveResult != null ? reserveResult.Error : InventoryInsertError.UpdateFailed,
+                    "reserve");
                 error = InventoryRewardGrantError.InsertPlanFailed;
                 return false;
             }
@@ -568,15 +601,59 @@ namespace DfoGmTool.ServerCore.Game.Inventory
             {
                 case InventoryRewardGrantKind.Premium:
                     return Complete(result);
+                case InventoryRewardGrantKind.AccountCurrency:
+                    return TryApplyAccountCurrency(inventory, entry, result);
+                case InventoryRewardGrantKind.EpicPiece:
+                    return TryApplyEpicPiece(inventory, entry, result);
                 case InventoryRewardGrantKind.MainVirtualCount:
                     return TryApplyMainVirtualCount(inventory, entry, result);
                 case InventoryRewardGrantKind.InventoryItem:
                     return TryApplyInventoryItem(inventory, entry, result);
-                case InventoryRewardGrantKind.EpicPiece:
-                    return TryApplyEpicPiece(inventory, entry, result);
                 default:
                     return Fail(result, InventoryRewardGrantError.InvalidRequest);
             }
+        }
+
+        private static bool TryApplyAccountCurrency(
+            InventoryService inventory,
+            InventoryRewardGrantPlanEntry entry,
+            InventoryRewardGrantResult result)
+        {
+            if (inventory == null)
+                return Fail(result, InventoryRewardGrantError.InvalidInventory);
+            if (entry?.SpecialOutcome == null
+                || entry.SpecialOutcome.Kind != SpecialRewardKind.HappyTokenCera
+                || !inventory.TryQueueHappyTokenCeraGrant(entry.GrantedCount))
+                return Fail(result, InventoryRewardGrantError.VirtualApplyFailed);
+
+            return Complete(result);
+        }
+
+        private static bool TryApplyEpicPiece(
+            InventoryService inventory,
+            InventoryRewardGrantPlanEntry entry,
+            InventoryRewardGrantResult result)
+        {
+            if (inventory == null)
+                return Fail(result, InventoryRewardGrantError.InvalidInventory);
+
+            if (entry == null
+                || !inventory.EpicPieces.TryAddByPieceId(
+                    entry.ItemTemplateId,
+                    entry.GrantedCount,
+                    out var finalCount))
+            {
+                return Fail(result, InventoryRewardGrantError.VirtualApplyFailed);
+            }
+
+            result.FinalCount = finalCount;
+            if (result.SpecialOutcome != null
+                && result.SpecialOutcome.Kind == SpecialRewardKind.EpicPiece)
+            {
+                result.SpecialOutcome.WalletNewTotal = finalCount;
+            }
+
+            return Complete(result);
         }
 
         private static bool TryApplyMainVirtualCount(
@@ -656,26 +733,22 @@ namespace DfoGmTool.ServerCore.Game.Inventory
             return true;
         }
 
-        private static bool TryPlanMainVirtualCount(
+        private static bool TryPlanAccountCurrency(
             InventoryService planningInventory,
             InventoryRewardGrantRequest request,
-            int itemTemplateId,
-            int count,
-            short slotIndex,
-            int slotItemId,
+            SpecialRewardOutcome outcome,
             out InventoryRewardGrantPlanEntry entry,
             out InventoryRewardGrantError error)
         {
             entry = null;
-            if (planningInventory == null)
+            error = InventoryRewardGrantError.None;
+            if (planningInventory == null || outcome == null || outcome.Count <= 0)
             {
-                error = InventoryRewardGrantError.InvalidInventory;
+                error = InventoryRewardGrantError.InvalidRequest;
                 return false;
             }
 
-            var current = planningInventory.GetMainVirtualCount(slotIndex);
-            var finalCount = AddCount(current != null ? current.Count : 0, count);
-            if (!planningInventory.SetMainVirtualCount(slotIndex, slotItemId, finalCount))
+            if (!planningInventory.TryQueueHappyTokenCeraGrant(outcome.Count))
             {
                 error = InventoryRewardGrantError.VirtualApplyFailed;
                 return false;
@@ -684,17 +757,12 @@ namespace DfoGmTool.ServerCore.Game.Inventory
             entry = new InventoryRewardGrantPlanEntry
             {
                 Request = request,
-                Kind = InventoryRewardGrantKind.MainVirtualCount,
-                ItemTemplateId = itemTemplateId,
-                RequestedCount = count,
-                GrantedCount = count,
-                ListType = InventoryListType.Main,
-                SlotIndex = slotIndex,
-                SlotItemId = slotItemId,
-                FinalCount = finalCount,
-                SpecialOutcome = CreateVirtualSpecialOutcome(itemTemplateId, count, slotIndex, finalCount),
+                Kind = InventoryRewardGrantKind.AccountCurrency,
+                ItemTemplateId = outcome.ItemTemplateId,
+                RequestedCount = outcome.Count,
+                GrantedCount = outcome.Count,
+                SpecialOutcome = outcome,
             };
-            error = InventoryRewardGrantError.None;
             return true;
         }
 
@@ -739,31 +807,46 @@ namespace DfoGmTool.ServerCore.Game.Inventory
             return true;
         }
 
-        private static bool TryApplyEpicPiece(
-            InventoryService inventory,
-            InventoryRewardGrantPlanEntry entry,
-            InventoryRewardGrantResult result)
+        private static bool TryPlanMainVirtualCount(
+            InventoryService planningInventory,
+            InventoryRewardGrantRequest request,
+            int itemTemplateId,
+            int count,
+            short slotIndex,
+            int slotItemId,
+            out InventoryRewardGrantPlanEntry entry,
+            out InventoryRewardGrantError error)
         {
-            if (inventory == null)
-                return Fail(result, InventoryRewardGrantError.InvalidInventory);
-
-            if (entry == null
-                || !inventory.EpicPieces.TryAddByPieceId(
-                    entry.ItemTemplateId,
-                    entry.GrantedCount,
-                    out var finalCount))
+            entry = null;
+            if (planningInventory == null)
             {
-                return Fail(result, InventoryRewardGrantError.VirtualApplyFailed);
+                error = InventoryRewardGrantError.InvalidInventory;
+                return false;
             }
 
-            result.FinalCount = finalCount;
-            if (result.SpecialOutcome != null
-                && result.SpecialOutcome.Kind == SpecialRewardKind.EpicPiece)
+            var current = planningInventory.GetMainVirtualCount(slotIndex);
+            var finalCount = AddCount(current != null ? current.Count : 0, count);
+            if (!planningInventory.SetMainVirtualCount(slotIndex, slotItemId, finalCount))
             {
-                result.SpecialOutcome.WalletNewTotal = finalCount;
+                error = InventoryRewardGrantError.VirtualApplyFailed;
+                return false;
             }
 
-            return Complete(result);
+            entry = new InventoryRewardGrantPlanEntry
+            {
+                Request = request,
+                Kind = InventoryRewardGrantKind.MainVirtualCount,
+                ItemTemplateId = itemTemplateId,
+                RequestedCount = count,
+                GrantedCount = count,
+                ListType = InventoryListType.Main,
+                SlotIndex = slotIndex,
+                SlotItemId = slotItemId,
+                FinalCount = finalCount,
+                SpecialOutcome = CreateVirtualSpecialOutcome(itemTemplateId, count, slotIndex, finalCount),
+            };
+            error = InventoryRewardGrantError.None;
+            return true;
         }
 
         private static bool TryCreateSpecialOnlyResult(
@@ -783,6 +866,16 @@ namespace DfoGmTool.ServerCore.Game.Inventory
                     ItemTemplateId = itemTemplateId,
                     Count = count,
                 };
+                return true;
+            }
+
+            if (SpecialRewardRouter.TryResolveAccountCurrencyReward(itemTemplateId, count, out var accountCurrencyOutcome))
+            {
+                result.Success = true;
+                result.Error = InventoryRewardGrantError.None;
+                result.Kind = InventoryRewardGrantKind.AccountCurrency;
+                result.GrantedCount = count;
+                result.SpecialOutcome = accountCurrencyOutcome;
                 return true;
             }
 
@@ -834,13 +927,17 @@ namespace DfoGmTool.ServerCore.Game.Inventory
 
         private static InventoryService CreatePlanningInventory(InventoryService source)
         {
-            var inventory = new InventoryService(source.CharacterId, source.AccountId);
+            var inventory = new InventoryService(
+                source.CharacterId,
+                source.AccountId,
+                source.Database);
             CopyListParam(source, inventory, InventoryListType.Main);
             CopyListParam(source, inventory, InventoryListType.Equipment);
             CopyListParam(source, inventory, InventoryListType.Avatar);
             CopyListParam(source, inventory, InventoryListType.Pet);
             CopyListParam(source, inventory, InventoryListType.PersonalCargo);
             CopyListParam(source, inventory, InventoryListType.AccountCargo);
+            CopyListParam(source, inventory, InventoryListType.GuildMedal);
 
             CopyItems(source, inventory, InventoryListType.Main);
             CopyItems(source, inventory, InventoryListType.Equipment);
@@ -848,12 +945,15 @@ namespace DfoGmTool.ServerCore.Game.Inventory
             CopyItems(source, inventory, InventoryListType.Pet);
             CopyItems(source, inventory, InventoryListType.PersonalCargo);
             CopyItems(source, inventory, InventoryListType.AccountCargo);
+            CopyItems(source, inventory, InventoryListType.GuildMedal);
 
             foreach (var item in source.GetMainVirtualCounts())
                 inventory.AttachMainVirtualCount(item.SlotIndex, item.ItemId, item.Count);
-
             inventory.EpicPieces.CopyFrom(source.EpicPieces);
+
             inventory.ClearDirtyState();
+            if (source.PendingHappyTokenCeraGrant > 0)
+                inventory.TryQueueHappyTokenCeraGrant(source.PendingHappyTokenCeraGrant);
             return inventory;
         }
 
@@ -922,6 +1022,66 @@ namespace DfoGmTool.ServerCore.Game.Inventory
             return true;
         }
 
+        private static void LogInventoryInsertFailure(
+            InventoryService inventory,
+            int itemTemplateId,
+            ItemCore core,
+            int requestedCount,
+            int insertCount,
+            InventoryInsertError insertError,
+            string stage)
+        {
+            try
+            {
+                var itemKind = core != null ? core.ItemKind : ItemCore.KindUnknown;
+                var listText = "n/a";
+                var rangeText = "n/a";
+                var freeText = "n/a";
+                var listParamText = "n/a";
+
+                if (inventory != null
+                    && ItemSlotBoundService.TryGetSlotRange(
+                        itemKind,
+                        inventory.GetListParam16(InventoryListType.Main),
+                        out var listType,
+                        out var range))
+                {
+                    listText = $"{(byte)listType}(0x{(byte)listType:X2})";
+                    rangeText = $"{range.Start}-{range.End}";
+                    freeText = CountFreeSlots(inventory, listType, range).ToString();
+                    listParamText = inventory.GetListParam16(listType).ToString();
+                }
+
+                FileLogger.Log(
+                    $"[InventoryReward] insert failed stage={stage} " +
+                    $"item=0x{itemTemplateId:X8} kind={itemKind} requested={requestedCount} " +
+                    $"insertCount={insertCount} error={insertError} list={listText} " +
+                    $"range={rangeText} free={freeText} listParam16={listParamText}");
+            }
+            catch (Exception ex)
+            {
+                FileLogger.Log($"[InventoryReward] insert failure logging failed: {ex.Message}");
+            }
+        }
+
+        private static int CountFreeSlots(
+            InventoryService inventory,
+            InventoryListType listType,
+            ItemSlotRange range)
+        {
+            if (inventory == null || range.Count <= 0)
+                return 0;
+
+            var free = 0;
+            for (var slot = range.Start; slot <= range.End; slot++)
+            {
+                if (inventory.GetItem(listType, (short)slot) == null)
+                    free++;
+            }
+
+            return free;
+        }
+
         private static bool TryResolveMainVirtualReward(int itemTemplateId, out short slotIndex, out int slotItemId)
         {
             slotIndex = -1;
@@ -941,7 +1101,10 @@ namespace DfoGmTool.ServerCore.Game.Inventory
                 return true;
             }
 
-            return InventoryService.TryResolveMainVirtualSlotByItemId(itemTemplateId, out slotIndex, out slotItemId);
+            if (InventoryService.TryResolveMainVirtualSlotByItemId(itemTemplateId, out slotIndex, out slotItemId))
+                return true;
+
+            return false;
         }
 
         private static SpecialRewardOutcome CreateVirtualSpecialOutcome(

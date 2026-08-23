@@ -19,7 +19,7 @@ namespace DfoGmTool.ServerCore.Game.Inventory
             {
                 command.Transaction = transaction;
                 command.CommandText = @"
-INSERT INTO inventory_audit_log_v2 (
+INSERT INTO inventory_audit_log (
     created_at,
     session_id,
     owner_scope,
@@ -127,6 +127,16 @@ INSERT INTO inventory_audit_log_v2 (
                 {
                     if (cube.Slot == slotIndex)
                         return Math.Max(0, cube.Count);
+                }
+            }
+
+            if (slotIndex >= InventoryService.MainVirtualSoulSlotStart
+                && slotIndex <= InventoryService.MainVirtualSoulSlotEnd)
+            {
+                foreach (var soul in CurrencyService.LoadSoulWarehouseCounts(connection, transaction, inventory.AccountId))
+                {
+                    if (soul.Slot == slotIndex)
+                        return Math.Max(0, soul.Count);
                 }
             }
 
