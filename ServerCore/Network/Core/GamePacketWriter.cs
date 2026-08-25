@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Text;
+using DfoGmTool.ServerCore.Infrastructure;
 
 namespace DfoGmTool.ServerCore.Network
 {
@@ -49,9 +50,9 @@ namespace DfoGmTool.ServerCore.Network
             _buffer.AddRange(new byte[count]);
         }
 
-        public void WriteUtf8Dstr(string value)
+        public void WriteClientDstr(string value)
         {
-            var bytes = Encoding.UTF8.GetBytes(value ?? string.Empty);
+            var bytes = ClientTextEncoding.GetBytes(value ?? string.Empty);
             WriteInt32(bytes.Length);
             WriteBytes(bytes);
         }

@@ -1374,7 +1374,7 @@ WHERE campaign_id = @campaignId;";
                     {
                         select.Transaction = transaction;
                         select.CommandText = @"
-SELECT character_id, account_id, name, level
+SELECT character_id, account_id, CAST(name AS BLOB), level
 FROM characters
 WHERE delete_flag = 0
   AND character_id > @lastCharacterId
@@ -1387,7 +1387,11 @@ LIMIT @batchSize;";
                         using (var reader = select.ExecuteReader())
                         {
                             while (reader.Read())
-                                recipients.Add((reader.GetInt32(0), reader.GetInt32(1), reader.GetString(2), reader.GetInt32(3)));
+                                recipients.Add((
+                                    reader.GetInt32(0),
+                                    reader.GetInt32(1),
+                                    ClientTextEncoding.ReadStoredName(reader.GetValue(2)),
+                                    reader.GetInt32(3)));
                         }
                     }
 

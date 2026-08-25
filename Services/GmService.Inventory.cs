@@ -510,13 +510,13 @@ namespace DfoGmTool.Services
                 conn.Open();
                 using (var cmd = conn.CreateCommand())
                 {
-                    cmd.CommandText = "SELECT name, level, job FROM characters WHERE character_id = @cid AND delete_flag = 0;";
+                    cmd.CommandText = "SELECT CAST(name AS BLOB), level, job FROM characters WHERE character_id = @cid AND delete_flag = 0;";
                     cmd.Parameters.AddWithValue("@cid", characterId);
                     using (var reader = cmd.ExecuteReader())
                     {
                         if (!reader.Read())
                             return Error("角色不存在或已删除: " + characterId);
-                        receiverName = reader.GetString(0);
+                        receiverName = ClientTextEncoding.ReadStoredName(reader.GetValue(0));
                         receiverLevel = reader.GetInt32(1);
                         receiverJob = reader.GetInt32(2);
                     }
@@ -649,13 +649,13 @@ namespace DfoGmTool.Services
                 conn.Open();
                 using (var cmd = conn.CreateCommand())
                 {
-                    cmd.CommandText = "SELECT name, level FROM characters WHERE character_id = @cid AND delete_flag = 0;";
+                    cmd.CommandText = "SELECT CAST(name AS BLOB), level FROM characters WHERE character_id = @cid AND delete_flag = 0;";
                     cmd.Parameters.AddWithValue("@cid", characterId);
                     using (var reader = cmd.ExecuteReader())
                     {
                         if (!reader.Read())
                             return Error("角色不存在或已删除: " + characterId);
-                        receiverName = reader.GetString(0);
+                        receiverName = ClientTextEncoding.ReadStoredName(reader.GetValue(0));
                         receiverLevel = reader.GetInt32(1);
                     }
                 }

@@ -1,6 +1,6 @@
 using System;
 using System.Globalization;
-using System.Text;
+using DfoGmTool.ServerCore.Infrastructure;
 
 namespace DfoGmTool.ServerCore.Game.Inventory
 {
@@ -18,8 +18,8 @@ namespace DfoGmTool.ServerCore.Game.Inventory
 
         public string Name
         {
-            get => _nameBytes.Length == 0 ? string.Empty : Encoding.UTF8.GetString(_nameBytes);
-            set => _nameBytes = string.IsNullOrEmpty(value) ? Array.Empty<byte>() : Encoding.UTF8.GetBytes(value);
+            get => _nameBytes.Length == 0 ? string.Empty : ClientTextEncoding.GetString(_nameBytes);
+            set => _nameBytes = string.IsNullOrEmpty(value) ? Array.Empty<byte>() : ClientTextEncoding.GetBytes(value);
         }
 
         public byte[] NameBytes
