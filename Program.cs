@@ -1,5 +1,6 @@
 using System;
 using System.Runtime.InteropServices;
+using DfoGmTool.ServerCore.Infrastructure;
 using DfoGmTool.Services;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -11,6 +12,8 @@ namespace DfoGmTool
     {
         public static void Main(string[] args)
         {
+            ClientTextEncoding.EnsureInitialized();
+
             GmToolHostConfig hostConfig;
             GmConfig initialConfig;
             try

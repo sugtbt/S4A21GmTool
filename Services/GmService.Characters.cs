@@ -1,13 +1,12 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 using DfoGmTool.ServerCore.Game.TitleBook;
 using DfoGmTool.ServerCore.Game.Characters;
 using DfoGmTool.ServerCore.Game.Currency;
 using DfoGmTool.ServerCore.Game.Dungeon;
 using DfoGmTool.ServerCore.Game.Inventory;
 using DfoGmTool.ServerCore.Game.Quests;
+using DfoGmTool.ServerCore.Infrastructure;
 using Microsoft.Data.Sqlite;
 
 namespace DfoGmTool.Services
@@ -23,7 +22,7 @@ namespace DfoGmTool.Services
                 using (var cmd = conn.CreateCommand())
                 {
                     cmd.CommandText = @"
-SELECT c.character_id, c.name, c.level, c.exp, c.job, c.grow_type,
+SELECT c.character_id, CAST(c.name AS BLOB), c.level, c.exp, c.job, c.grow_type,
        c.bonus_sp, c.bonus_tp, c.account_id, a.m_id
 FROM characters c
 JOIN accounts a ON a.account_id = c.account_id
@@ -39,7 +38,7 @@ ORDER BY c.character_id;";
                             result.Add(new
                             {
                                 characterId = reader.GetInt32(0),
-                                name = reader.GetString(1),
+                                name = ClientTextEncoding.ReadStoredName(reader.GetValue(1)),
                                 level = reader.GetInt32(2),
                                 exp = reader.GetInt64(3),
                                 job,
@@ -76,7 +75,7 @@ ORDER BY c.character_id;";
                 using (var cmd = conn.CreateCommand())
                 {
                     cmd.CommandText = @"
-SELECT name, level, exp, job, grow_type, bonus_sp, bonus_tp
+SELECT CAST(name AS BLOB), level, exp, job, grow_type, bonus_sp, bonus_tp
 FROM characters WHERE character_id = @cid;";
                     cmd.Parameters.AddWithValue("@cid", characterId);
                     using (var reader = cmd.ExecuteReader())
@@ -90,7 +89,7 @@ FROM characters WHERE character_id = @cid;";
                         {
                             characterId,
                             accountId,
-                            name = reader.GetString(0),
+                            name = ClientTextEncoding.ReadStoredName(reader.GetValue(0)),
                             level = reader.GetInt32(1),
                             exp = reader.GetInt64(2),
                             job,
@@ -112,7 +111,7 @@ FROM characters WHERE character_id = @cid;";
             }
         }
 
-        // 只改 characters.name。UTF-8 2-18 字节，中英文数字，全库唯一（含已删除）。
+        // 只改 characters.name。GBK 2-18 字节，中英文数字，全库唯一（含已删除）。
         public object RenameCharacter(int characterId, string name)
         {
             if (!TryNormalizeCharacterName(name, out var text, out var nameBytes, out var error))
@@ -125,7 +124,7 @@ FROM characters WHERE character_id = @cid;";
                 conn.Open();
                 using (var cmd = conn.CreateCommand())
                 {
-                    cmd.CommandText = "SELECT name FROM characters WHERE character_id = @cid;";
+                    cmd.CommandText = "SELECT CAST(name AS BLOB) FROM characters WHERE character_id = @cid;";
                     cmd.Parameters.AddWithValue("@cid", characterId);
                     var current = cmd.ExecuteScalar();
                     if (current == null || current == DBNull.Value)
@@ -171,7 +170,7 @@ WHERE character_id = @cid;";
             return new { success = true, characterId, name = text };
         }
 
-        // 数字、拉丁字母、CJK 统一汉字；UTF-8 2-18 字节。
+        // 数字、拉丁字母、CJK 统一汉字；GBK 2-18 字节。
         private static bool TryNormalizeCharacterName(
             string name,
             out string text,
@@ -186,7 +185,7 @@ WHERE character_id = @cid;";
                 return false;
             }
 
-            nameBytes = new UTF8Encoding(false, true).GetBytes(text);
+            nameBytes = ClientTextEncoding.GetBytes(text);
             if (nameBytes.Length < 2 || nameBytes.Length > 18)
             {
                 error = "名字长度须为 2-18 字节";
@@ -205,10 +204,9 @@ WHERE character_id = @cid;";
 
         private static bool IsSameCharacterName(object stored, string text, byte[] nameBytes)
         {
-            if (stored is byte[] storedBytes)
-                return storedBytes.AsSpan().SequenceEqual(nameBytes);
-            return stored is string storedText
-                && string.Equals(storedText, text, StringComparison.Ordinal);
+            if (stored is byte[] storedBytes && storedBytes.AsSpan().SequenceEqual(nameBytes))
+                return true;
+            return string.Equals(ClientTextEncoding.ReadStoredName(stored), text, StringComparison.Ordinal);
         }
 
         private static bool IsAllowedCharacterName(string text)

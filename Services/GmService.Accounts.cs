@@ -1,12 +1,12 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using DfoGmTool.ServerCore.Game.TitleBook;
 using DfoGmTool.ServerCore.Game.Characters;
 using DfoGmTool.ServerCore.Game.Currency;
 using DfoGmTool.ServerCore.Game.Dungeon;
 using DfoGmTool.ServerCore.Game.Inventory;
 using DfoGmTool.ServerCore.Game.Quests;
+using DfoGmTool.ServerCore.Infrastructure;
 using Microsoft.Data.Sqlite;
 
 namespace DfoGmTool.Services
@@ -21,30 +21,49 @@ namespace DfoGmTool.Services
                 conn.Open();
                 using (var cmd = conn.CreateCommand())
                 {
-                    // GROUP_CONCAT 角色名: 前端用于按角色名反查账号
+                    // 按账号聚合角色名，供前端反查。
                     cmd.CommandText = @"
 SELECT a.account_id, a.m_id, a.cera, a.token_cera, a.lucky_star,
-       COUNT(c.character_id), COALESCE(GROUP_CONCAT(c.name, char(10)), '')
+       c.character_id, CAST(c.name AS BLOB)
 FROM accounts a
 LEFT JOIN characters c ON c.account_id = a.account_id AND c.delete_flag = 0
-GROUP BY a.account_id
-ORDER BY a.account_id;";
+ORDER BY a.account_id, c.character_id;";
                     using (var reader = cmd.ExecuteReader())
                     {
+                        var byAccount = new Dictionary<int, AccountListRow>();
                         while (reader.Read())
                         {
-                            var joined = reader.GetString(6);
+                            var accountId = reader.GetInt32(0);
+                            if (!byAccount.TryGetValue(accountId, out var row))
+                            {
+                                row = new AccountListRow
+                                {
+                                    AccountId = accountId,
+                                    Name = reader.GetString(1),
+                                    Cera = reader.GetInt64(2),
+                                    TokenCera = reader.GetInt64(3),
+                                    LuckyStar = reader.GetInt64(4),
+                                };
+                                byAccount.Add(accountId, row);
+                            }
+
+                            if (reader.IsDBNull(5))
+                                continue;
+
+                            row.CharacterNames.Add(ClientTextEncoding.ReadStoredName(reader.GetValue(6)));
+                        }
+
+                        foreach (var row in byAccount.Values)
+                        {
                             result.Add(new
                             {
-                                accountId = reader.GetInt32(0),
-                                name = reader.GetString(1),
-                                cera = reader.GetInt64(2),
-                                tokenCera = reader.GetInt64(3),
-                                luckyStar = reader.GetInt64(4),
-                                characterCount = reader.GetInt32(5),
-                                characterNames = joined.Length == 0
-                                    ? new string[0]
-                                    : joined.Split('\n'),
+                                accountId = row.AccountId,
+                                name = row.Name,
+                                cera = row.Cera,
+                                tokenCera = row.TokenCera,
+                                luckyStar = row.LuckyStar,
+                                characterCount = row.CharacterNames.Count,
+                                characterNames = row.CharacterNames.ToArray(),
                             });
                         }
                     }
@@ -437,6 +456,16 @@ WHERE account_id = @aid;";
                 cmd.Parameters.AddWithValue("@aid", accountId);
                 cmd.ExecuteNonQuery();
             }
+        }
+
+        private sealed class AccountListRow
+        {
+            public int AccountId;
+            public string Name;
+            public long Cera;
+            public long TokenCera;
+            public long LuckyStar;
+            public List<string> CharacterNames = new List<string>();
         }
     }
 }
