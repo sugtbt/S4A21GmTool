@@ -117,6 +117,6 @@ jobs:
           draft: false
           prerelease: false
           files: |
-            DfoServer-win-x64.zip
+            S4A21GmTool-win-x64.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
